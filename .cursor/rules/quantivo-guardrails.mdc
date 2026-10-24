@@ -1,0 +1,49 @@
+---
+description: Quantivo safety, quantity, scanner, and local-service guardrails
+alwaysApply: true
+---
+
+# Quantivo guardrails
+
+Before changing product behavior, follow `docs/REQUIREMENTS.md`, `docs/IMPLEMENTATION.md`, and `docs/architecture/DECISIONS.md`. When a review changes behavior, update those docs and `mockup/quantivo-mobile.html` in the same change.
+
+## Safety
+
+- Keep `LIVE_TRADING_ENABLED` false. Production startup must fail if it is true.
+- `AUTH_PROVIDER=dev_mock` is development and test only. Never add a fixed production OTP or a production bypass.
+- Do not place, modify, or cancel a real order. M1 records the refusal and inserts no order.
+- Do not store broker passwords, OTPs, tokens, or API secrets in tables, logs, or audit payloads.
+- Fail closed. A stale, expired, or withdrawn signal, a failed risk check, unknown broker state, or unconfirmed protection is not executable.
+
+## Quantity
+
+- Suggested quantity is `floor(maximum rupee risk / abs(trigger - stop))`, then rounded down to the lot and cut by the quantity and exposure caps.
+- Capital set aside is not the numerator. Risk-reward is shown from the trigger and does not change quantity.
+- If one lot would lose more than the maximum risk, quantity is none and the reason is shown. F&O and commodity use the contract lot.
+- Label provider prices apart from the Quantivo quantity. The server recalculates quantity and rejects a different client value.
+
+```python
+# Bad: quantity = floor(capital / trigger)
+# Good: quantity = floor(max_risk_inr / abs(trigger - stop))
+```
+
+## Scanner
+
+- The first scanner is Mani's. The trader-facing name is Mani's Channel. Do not add an Apex provider.
+- Registration is per source channel, such as Equity, F&O, or commodity. An unregistered channel says so and shows no calls.
+- Store the horizon words as published and show them on the call. Do not add a horizon tab row. Do not treat one channel's "Intraday" as another channel's "Intraday to 7 days".
+- A segment filter changes the view only. It does not grant access.
+- Do not invent ratings, subscriber counts, or returns.
+
+## Local services
+
+- Before starting a server, check whether the port is already listening.
+- If it is taken, start on a free port and use that port in the client configuration. Say which port was chosen.
+- Leave processes from other projects running. Do not kill, stop, or restart them to free a port.
+- A process tree stop applies only to a server this session started, and only when that server itself must be replaced.
+
+## Shape
+
+- Keep one API and one database. Put scanner and broker specifics behind adapters.
+- Once a broker is connected, it is authoritative for orders, fills, and positions. Do not overwrite those facts.
+- Use decimal values for money and prices. Do not use floating point.

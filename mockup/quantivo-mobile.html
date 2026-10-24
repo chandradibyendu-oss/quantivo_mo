@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantivo</title>
+</head>
+<body>
+<div id="qm-app">
+  <p class="vis-sr-only">Quantivo on a phone and a desktop. Sign in with a mobile number, confirm starting risk, activate Mani's, then read the sample feed and one signal.</p>
+  <div class="pair">
+    <section class="col">
+      <p class="device-label">Phone</p>
+      <article class="device device-phone" aria-label="Phone" data-device="phone">
+        <div class="chrome" data-mode="gate">
+          <header class="bar">
+            <button type="button" class="menu-button" data-action="menu" aria-label="Open navigation" hidden>☰</button>
+            <button type="button" class="back" data-action="back" hidden>Back</button>
+            <div class="mark">Quantivo</div>
+            <div class="tabs bar-tabs" data-bar-scanners hidden>
+              <button type="button" data-action="scanner" data-scanner="mani" aria-pressed="true">Mani's Channel</button>
+              <button type="button" data-action="scanner" data-scanner="other">Another scanner</button>
+            </div>
+          </header>
+          <nav class="menu-sheet" aria-label="Sections" hidden>
+            <button type="button" data-action="go" data-go="home">Home</button>
+            <button type="button" data-action="go" data-go="scanners">Scanners</button>
+            <button type="button" data-action="go" data-go="admin">Admin</button>
+            <button type="button" data-action="go" data-go="account">Account</button>
+          </nav>
+          <div class="stage" data-mount></div>
+          <nav class="appnav" aria-label="Sections" hidden>
+            <button type="button" data-action="go" data-go="home">Home</button>
+            <button type="button" data-action="go" data-go="scanners">Scanners</button>
+            <button type="button" data-action="go" data-go="admin">Admin</button>
+            <button type="button" data-action="go" data-go="account">Account</button>
+          </nav>
+        </div>
+      </article>
+    </section>
+    <section class="col col-desk">
+      <p class="device-label">Desktop</p>
+      <article class="device device-desk" aria-label="Desktop" data-device="desk">
+        <div class="chrome desk-chrome" data-mode="gate">
+          <nav class="rail" aria-label="Sections" hidden>
+            <div class="mark">Quantivo</div>
+            <button type="button" data-action="go" data-go="home">Home</button>
+            <button type="button" data-action="go" data-go="scanners">Scanners</button>
+            <button type="button" data-action="go" data-go="admin">Admin</button>
+            <button type="button" data-action="go" data-go="account">Account</button>
+          </nav>
+          <div class="desk-main">
+            <header class="bar">
+              <button type="button" class="back" data-action="back" hidden>Back</button>
+              <div class="mark desk-mark">Quantivo</div>
+            </header>
+            <div class="stage" data-mount></div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+  <template id="qm-screens">
+    <section data-screen="number">
+      <h2>Sign in</h2>
+      <p class="lead">Use your Indian mobile number. A one-time code opens the session.</p>
+      <p class="fine" data-signed-out hidden>You are signed out.</p>
+      <label class="field">Mobile number
+        <span class="phone-row"><span class="cc">+91</span><input data-mobile inputmode="numeric" autocomplete="tel" value="9845011220"></span>
+      </label>
+      <p class="error" data-error="number" hidden></p>
+      <button type="button" class="primary" data-action="request-code">Send code</button>
+    </section>
+    <section data-screen="code" hidden>
+      <h2>Enter the code</h2>
+      <p class="lead">Sent to <span data-sent-to></span>.</p>
+      <p class="dev">Development shows this code because SMS is not connected: <strong>482913</strong>. Production does not display it.</p>
+      <label class="field">One-time code
+        <input data-otp inputmode="numeric" autocomplete="one-time-code" value="">
+      </label>
+      <p class="error" data-error="code" hidden></p>
+      <button type="button" class="primary" data-action="verify">Continue</button>
+      <button type="button" class="ghost" data-action="change-number">Change number</button>
+    </section>
+    <section data-screen="start" hidden>
+      <p class="step">Step 1 of 2</p>
+      <h2>Starting risk</h2>
+      <p class="lead">A new account starts with these preferences. They are not a recommendation. Change any of them now. You can change them again from Account, and the change is audited.</p>
+      <label class="field">Display name
+        <input data-name maxlength="40" placeholder="Optional">
+      </label>
+      <div class="risk-edit">
+        <label class="field">Capital set aside (₹)
+          <input data-risk="capital" inputmode="decimal" value="50000">
+        </label>
+        <label class="field">Maximum loss per trade (₹)
+          <input data-risk="maxRisk" inputmode="decimal" value="500">
+        </label>
+        <label class="field">Quantity cap
+          <input data-risk="maxQty" inputmode="numeric" value="500">
+        </label>
+        <label class="field">Exposure cap (₹)
+          <input data-risk="exposure" inputmode="decimal" value="200000">
+        </label>
+        <p class="meta">Products allowed</p>
+        <div class="allow">
+          <label class="check"><input type="checkbox" data-allow="MIS" checked> MIS</label>
+          <label class="check"><input type="checkbox" data-allow="CNC" checked> CNC</label>
+        </div>
+      </div>
+      <p class="error" data-error="risk" hidden></p>
+      <p class="fine">Capital set aside is not the amount at risk. Quantity uses the maximum loss, and that loss cannot exceed the capital set aside.</p>
+      <button type="button" class="primary" data-action="to-activate">Continue</button>
+    </section>
+    <section data-screen="activate" hidden>
+      <p class="step">Step 2 of 2</p>
+      <h2>Add a scanner</h2>
+      <p class="lead">Signals stay hidden until this scanner is activated. Ratings and subscriber counts are not shown.</p>
+      <article class="offer">
+        <div class="offer-top">
+          <span class="mono" aria-hidden="true">M</span>
+          <div>
+            <h3>Mani's Channel</h3>
+            <p>Mani's</p>
+          </div>
+        </div>
+        <p>Separate Telegram channels for Equity, F&amp;O, and commodity. Horizon words stay inside the channel that wrote them.</p>
+        <p class="meta">Equity says “Intraday to 7 days”. F&amp;O says “Intraday”. Those are not the same filter.</p>
+        <p class="price">₹999 monthly</p>
+        <p class="fine">This sample account is registered for Equity and Commodity. F&amp;O is not registered. Activating does not charge you.</p>
+        <p class="fine">Mani's is the first scanner. These calls are sample data until the Telegram channel is connected. They are not market recommendations.</p>
+      </article>
+      <button type="button" class="primary" data-action="activate">Activate scanner</button>
+    </section>
+    <section data-screen="home" hidden>
+      <div class="tabs" role="tablist" aria-label="Scanner">
+        <button type="button" data-action="scanner" data-scanner="mani" aria-pressed="true">Mani's Channel</button>
+        <button type="button" data-action="scanner" data-scanner="other">Another scanner</button>
+      </div>
+      <div class="feed-head">
+        <span class="mono" aria-hidden="true" data-home-mark data-home-heading>M</span>
+        <div>
+          <h2 data-home-title data-home-heading>Mani's Channel</h2>
+          <p class="meta" data-home-meta>Mani's · Equity, F&amp;O, and Commodity channels · Last publication 2 min ago</p>
+          <p class="meta" data-broker-line></p>
+        </div>
+      </div>
+      <p class="fine" data-other-empty hidden>No channels yet. One tap above returns to a scanner you already hold.</p>
+      <div class="tabs" role="tablist" aria-label="Channel" data-mani-channels>
+        <button type="button" data-action="channel" data-channel="all" aria-pressed="true">All registered</button>
+        <button type="button" data-action="channel" data-channel="equity">Equity</button>
+        <button type="button" data-action="channel" data-channel="fno">F&amp;O</button>
+        <button type="button" data-action="channel" data-channel="commodity">Commodity</button>
+      </div>
+      <div data-feed>
+        <p class="fine" data-channel-note hidden></p>
+        <div class="viewbar" role="group" aria-label="Which calls">
+          <button type="button" data-action="call-view" data-view="actionable" aria-pressed="true">Actionable</button>
+          <button type="button" data-action="call-view" data-view="all" aria-pressed="false">All</button>
+        </div>
+        <div data-list></div>
+      </div>
+      <div data-locked hidden>
+        <p class="warn" data-locked-copy></p>
+        <button type="button" class="primary" data-action="register-channel">Register for this channel</button>
+      </div>
+      <p class="fine">While this list is open, stored calls are read again every 5 seconds. The last traded price is reused for up to a minute. On a weekday from 09:15 to 15:30 IST a new Telegram post is stored about every 5 seconds.</p>
+      <p class="fine">Last LTP is the last traded price from Fyers for an NSE cash symbol. During the cash session the same line says LTP. The price is green when it is above the previous close and red when it is below, with that percent beside it. These review figures are samples. The price is not the trigger and does not change quantity. The candlestick icon opens the session candles at 1 minute and 5 minutes. Entry, Caution, Not valid, T1 trail, T2 trail, Final, and Stop are the price marks. The time on the chip is the minute of the one-minute bar. These review times are samples. Not valid, Final, and Stop leave Actionable.</p>
+      <p class="fine">A signal is not an order. Nothing is sent unless you confirm it, and this build does not send orders.</p>
+    </section>
+    <section data-screen="detail" hidden>
+      <div data-detail></div>
+    </section>
+    <section data-screen="chart" hidden>
+      <div data-chart></div>
+    </section>
+    <section data-screen="scanners" hidden>
+      <h2>Scanners</h2>
+      <p class="lead">Provider, scanner, category, and price. No rating and no subscriber count.</p>
+      <article class="offer">
+        <div class="offer-top">
+          <span class="mono" aria-hidden="true">M</span>
+          <div>
+            <h3>Mani's Channel</h3>
+            <p>Mani's</p>
+          </div>
+        </div>
+        <p>Register a channel to see its calls. Each channel keeps its own horizon words.</p>
+        <p class="meta">Equity · Intraday to 7 days, Short term, Long term. F&amp;O · Intraday. Commodity · Positional.</p>
+        <p class="price">₹999 monthly</p>
+        <div data-channels></div>
+      </article>
+      <button type="button" class="primary" data-action="open-feed">Open feed</button>
+    </section>
+    <section data-screen="account" hidden>
+      <h2>Account</h2>
+      <label class="field">Display name
+        <input data-name maxlength="40" placeholder="Optional">
+      </label>
+      <dl class="facts">
+        <div><dt>Mobile</dt><dd data-account-mobile></dd></div>
+      </dl>
+      <h3>Risk profile</h3>
+      <div class="risk-edit">
+        <label class="field">Capital set aside (₹)
+          <input data-risk="capital" inputmode="decimal" value="50000">
+        </label>
+        <label class="field">Maximum loss per trade (₹)
+          <input data-risk="maxRisk" inputmode="decimal" value="500">
+        </label>
+        <label class="field">Quantity cap
+          <input data-risk="maxQty" inputmode="numeric" value="500">
+        </label>
+        <label class="field">Exposure cap (₹)
+          <input data-risk="exposure" inputmode="decimal" value="200000">
+        </label>
+        <p class="meta">Products allowed</p>
+        <div class="allow">
+          <label class="check"><input type="checkbox" data-allow="MIS" checked> MIS</label>
+          <label class="check"><input type="checkbox" data-allow="CNC" checked> CNC</label>
+        </div>
+      </div>
+      <p class="error" data-error="risk" hidden></p>
+      <p class="fine">Capital set aside is not the amount at risk. Quantity uses the maximum loss, and that loss cannot exceed the capital set aside.</p>
+      <h3>Broker</h3>
+      <p data-broker-copy></p>
+      <button type="button" class="ghost" data-action="broker"></button>
+      <button type="button" class="ghost" data-action="logout">Log out</button>
+    </section>
+    <section data-screen="admin" hidden>
+      <h2>Admin configuration</h2>
+      <p class="lead">Each channel has its own feed. One Telegram login on the worker is shared by every Telegram channel. The phone and session are not entered here.</p>
+      <h3>Global</h3>
+      <article class="offer">
+        <h3>Telegram login</h3>
+        <p>Not set on this worker.</p>
+        <p class="fine">Every Telegram channel uses this one login. Saving a channel id does not join the channel.</p>
+      </article>
+      <article class="offer">
+        <h3>How long a call stays actionable</h3>
+        <p class="fine">Intraday and BTST use minutes. Short term and long term use days. At 30 days those two match expiry, so the chip says Expired. A shorter number marks the call Stale sooner. Intraday to 7 days expires 7 days after the post.</p>
+        <label class="field">Intraday and BTST, minutes
+          <input value="30" inputmode="numeric">
+        </label>
+        <label class="field">Short term, days
+          <input value="30" inputmode="numeric">
+        </label>
+        <label class="field">Long term, days
+          <input value="30" inputmode="numeric">
+        </label>
+        <button type="button" class="primary">Save clocks</button>
+      </article>
+      <article class="offer">
+        <h3>Fyers quotes</h3>
+        <p>Connected until 8 Nov 2026.</p>
+        <p class="fine">Save the Fyers app id, app secret, and PIN once. Register the callback URL on that Fyers app, then sign in on Fyers. Quantivo does not ask for the Fyers password. The access token refreshes after 6:30 AM IST. Sign in again after 15 days. While this date is still ahead, the screen does not ask for a sign-in.</p>
+      </article>
+      <h3>Scanners</h3>
+      <article class="offer">
+        <h3>Add a scanner</h3>
+        <label class="field">Provider
+          <input placeholder="Provider name">
+        </label>
+        <label class="field">Scanner
+          <input placeholder="Scanner name">
+        </label>
+        <p class="fine">A new scanner starts with no channels and no price. The same provider name adds another scanner under that provider.</p>
+        <button type="button" class="primary">Add scanner</button>
+      </article>
+      <h3>Channels</h3>
+      <article class="offer">
+        <h3>Add a channel</h3>
+        <p class="meta">Scanner · Mani's Channel</p>
+        <label class="field">Display name
+          <input placeholder="F&amp;O">
+        </label>
+        <div class="segments" role="group" aria-label="New channel segment">
+          <button type="button">Equity</button>
+          <button type="button">F&amp;O</button>
+          <button type="button">Commodity</button>
+        </div>
+        <p class="fine">A new channel starts as sample, and traders register for it separately.</p>
+        <button type="button" class="primary">Add channel</button>
+      </article>
+      <article class="offer">
+        <h3>Equity</h3>
+        <p class="meta">Mani's Channel · sample until a feed is saved</p>
+        <p class="meta">Feed</p>
+        <div class="segments" role="group" aria-label="Equity feed">
+          <button type="button" data-action="admin-kind" data-admin-kind="none">Sample</button>
+          <button type="button" data-action="admin-kind" data-admin-kind="telegram">Telegram</button>
+          <button type="button" data-action="admin-kind" data-admin-kind="http">HTTP</button>
+        </div>
+        <div data-admin-fields hidden>
+          <label class="field">Channel name
+            <input data-admin-channel placeholder="Equity Premium SEBI Reg">
+          </label>
+          <p class="fine">Find channel looks up the id from the chats this worker's login has already joined. The id is what gets saved.</p>
+        </div>
+        <p class="fine" data-admin-notice hidden></p>
+        <p class="warn" data-admin-warn hidden></p>
+        <div data-admin-warn-actions hidden>
+          <button type="button" class="primary" data-action="admin-warn-confirm">Delete Equity</button>
+          <button type="button" class="ghost" data-action="admin-warn-keep">Keep this channel</button>
+        </div>
+        <button type="button" class="primary" data-action="admin-save">Save channel</button>
+        <button type="button" class="ghost" data-action="admin-delete">Delete channel</button>
+      </article>
+    </section>
+  </template>
+</div>
+<style>
+#qm-app {
+  color: light-dark(#1c1914, #f3efe6);
+  font-family: "Segoe UI", sans-serif;
+}
+#qm-app h2 {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+#qm-app h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+#qm-app p { margin: 0; }
+#qm-app .pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: flex-start;
+}
+#qm-app .col { width: min(100%, 390px); }
+#qm-app .col-desk { flex: 1 1 560px; width: auto; min-width: min(100%, 560px); }
+#qm-app .device-label {
+  margin: 0 0 8px;
+  color: light-dark(#6a6258, #b7ad9e);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#qm-app .chrome {
+  background: light-dark(#f3eee4, #14120e);
+  border: 1px solid light-dark(#ddd4c6, #2c2822);
+  border-radius: 28px;
+  overflow: hidden;
+}
+#qm-app .device-phone .chrome {
+  min-height: 700px;
+  display: flex;
+  flex-direction: column;
+}
+#qm-app .desk-chrome {
+  display: flex;
+  min-height: 700px;
+}
+#qm-app .rail {
+  width: 168px;
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 22px 12px;
+  background: light-dark(#fffdf8, #1c1914);
+  border-right: 1px solid light-dark(#e4dccf, #2c2822);
+}
+#qm-app .rail .mark { padding: 0 10px 16px; }
+#qm-app .desk-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+#qm-app .bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 14px 18px 0;
+}
+#qm-app .mark {
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+#qm-app .desk-mark { display: none; }
+#qm-app .bar-tabs { flex: 1; min-width: 0; margin-top: 0; }
+#qm-app .bar-tabs button { font-size: 1.15rem; }
+#qm-app .device-phone [data-home-heading] { display: none; }
+#qm-app .device-phone [data-screen="home"] > .tabs[aria-label="Scanner"] { display: none; }
+#qm-app .stage {
+  padding: 12px 18px 20px;
+}
+#qm-app .device-phone .stage {
+  flex: 1;
+  overflow: auto;
+}
+#qm-app .chrome[data-mode="gate"] .stage {
+  max-width: 420px;
+}
+#qm-app .lead, #qm-app .fine, #qm-app .meta, #qm-app .sub, #qm-app .dev {
+  color: light-dark(#5e564c, #c9bfb0);
+  font-size: 0.92rem;
+}
+#qm-app .lead { margin-bottom: 14px; }
+#qm-app .fine { margin-top: 8px; font-size: 0.82rem; }
+#qm-app .dev {
+  margin-bottom: 12px;
+  padding-top: 8px;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+}
+#qm-app .step {
+  margin-bottom: 4px;
+  color: light-dark(#1f4e45, #9fd0c4);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#qm-app .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+#qm-app input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid light-dark(#d4cbbd, #3a342c);
+  background: light-dark(#fffdf8, #1c1914);
+  color: light-dark(#1c1914, #f3efe6);
+  border-radius: 12px;
+  padding: 12px 12px;
+  font: inherit;
+  font-weight: 550;
+  font-size: 1rem;
+}
+#qm-app .phone-row { display: flex; gap: 8px; align-items: center; }
+#qm-app .cc {
+  font-size: 1rem;
+  font-weight: 650;
+}
+#qm-app .error {
+  margin: 0 0 8px;
+  color: light-dark(#8d2a22, #f0a097);
+  font-size: 0.88rem;
+}
+#qm-app button {
+  font: inherit;
+  cursor: pointer;
+}
+#qm-app .primary, #qm-app .ghost {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-weight: 700;
+}
+#qm-app .primary {
+  border: 0;
+  background: light-dark(#1f4e45, #c8ebe3);
+  color: light-dark(#f7f4ee, #14221f);
+}
+#qm-app .ghost {
+  border: 1px solid light-dark(#d4cbbd, #3a342c);
+  background: transparent;
+  color: light-dark(#1c1914, #f3efe6);
+}
+#qm-app .back {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  font-size: 1.4rem;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+#qm-app .menu-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  font-size: 1.4rem;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+#qm-app .menu-sheet {
+  display: flex;
+  flex-direction: column;
+}
+#qm-app .menu-sheet button {
+  border: 0;
+  border-bottom: 1px solid light-dark(#e4dccf, #2c2822);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-weight: 800;
+  font-size: 1.2rem;
+  padding: 16px 4px;
+}
+#qm-app .appnav {
+  display: none;
+}
+#qm-app .appnav button, #qm-app .rail button {
+  border: 0;
+  background: transparent;
+  color: light-dark(#5e564c, #c9bfb0);
+  font-weight: 700;
+  padding: 14px 8px;
+}
+#qm-app .rail button {
+  text-align: left;
+  border-radius: 10px;
+  padding: 10px 10px;
+}
+#qm-app .appnav button[aria-current="page"],
+#qm-app .rail button[aria-current="page"] {
+  color: light-dark(#1c1914, #f3efe6);
+  background: light-dark(#efe7da, #2a2620);
+}
+#qm-app .facts {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 4px;
+}
+#qm-app .facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+}
+#qm-app dt { color: light-dark(#5e564c, #c9bfb0); font-size: 0.88rem; }
+#qm-app dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 650; }
+#qm-app .offer {
+  margin-top: 8px;
+  padding-top: 4px;
+}
+#qm-app .offer-top { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+#qm-app .mono {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  background: light-dark(#1f4e45, #24332f);
+  color: light-dark(#f7f4ee, #c8ebe3);
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+#qm-app .offer .meta, #qm-app .price { margin-top: 6px; }
+#qm-app .price { font-weight: 750; font-size: 1.05rem; color: light-dark(#1c1914, #f3efe6); }
+#qm-app .status-line { margin-top: 8px; font-weight: 650; }
+#qm-app .feed-head { display: flex; gap: 12px; align-items: flex-start; }
+#qm-app .feed-head h2 { font-size: 1.15rem; }
+#qm-app .segments {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+#qm-app .segments button {
+  flex: 0 0 auto;
+  border: 2px solid light-dark(#1c1914, #f3efe6);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 48px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+#qm-app .segments button[aria-pressed="true"] {
+  background: light-dark(#1f4e45, #c8ebe3);
+  color: light-dark(#f7f4ee, #14221f);
+  border-color: transparent;
+}
+#qm-app .viewbar {
+  display: flex;
+  margin-top: 8px;
+  border: 1px solid light-dark(#1c2430, #f3efe6);
+  border-radius: 8px;
+  overflow: hidden;
+}
+#qm-app .viewbar button {
+  flex: 1;
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+}
+#qm-app .viewbar button + button { border-left: 1px solid light-dark(#1c2430, #f3efe6); }
+#qm-app .viewbar button[aria-pressed="true"] {
+  background: light-dark(#0d5c48, #c8ebe3);
+  color: light-dark(#f7f4ee, #14221f);
+}
+#qm-app .tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  border-bottom: 1px solid light-dark(#cfc6b6, #3a342c);
+  overflow-x: auto;
+}
+#qm-app .tabs button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 4px 12px 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: light-dark(#3a4450, #c8c0b4);
+  font-size: 1rem;
+  font-weight: 650;
+  margin-bottom: -1px;
+}
+#qm-app .tabs button[aria-pressed="true"] {
+  color: light-dark(#1c2430, #f3efe6);
+  font-weight: 800;
+  background: transparent;
+  border-bottom-color: light-dark(#0d5c48, #c8ebe3);
+}
+#qm-app .guide {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+#qm-app .guide::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+#qm-app .guide-waiting, #qm-app .guide-open, #qm-app .guide-final { background: #e7f6ee; color: #16804A; }
+#qm-app .guide-entry { background: #d3eadc; color: #0d5c48; }
+#qm-app .guide-t1_trail, #qm-app .guide-t2_trail, #qm-app .guide-trail { background: #e5f2ea; color: #0b6a34; }
+#qm-app .guide-window_over, #qm-app .guide-ended, #qm-app .guide-checking, #qm-app .guide-not_valid { background: #e7e0d2; color: #3a4450; }
+#qm-app .guide-stale, #qm-app .guide-caution { background: #f6ecd4; color: #6d4e12; }
+#qm-app .guide-stop { background: #f8e6e4; color: #9c1d1d; }
+#qm-app .guide-expired { background: #E8E1D4; color: #626B78; }
+#qm-app .channel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+}
+#qm-app .channel .words {
+  grid-column: 1 / -1;
+  color: light-dark(#5e564c, #c9bfb0);
+  font-size: 0.82rem;
+}
+#qm-app .channel .ghost {
+  grid-column: 1 / -1;
+  width: auto;
+  margin: 4px 0 0;
+  padding: 8px 12px;
+}
+#qm-app .row-actions { margin: 12px 0; }
+#qm-app .row-actions .ghost { width: auto; margin: 0; padding: 8px 12px; }
+#qm-app .signal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+  background: transparent;
+  color: inherit;
+  padding: 12px 0;
+}
+#qm-app .signal .sym { font-size: 20px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#qm-app .symline { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+#qm-app .side { font-size: 18px; font-weight: 700; }
+#qm-app .buy { color: light-dark(#16804A, #8dcea0); }
+#qm-app .sell { color: light-dark(#C23B3B, #f0a097); }
+#qm-app .signal .sub { grid-column: 1 / -1; }
+#qm-app .signal-row {
+  display: grid;
+  grid-template-columns: 1fr 40px;
+  align-items: start;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+}
+#qm-app .signal-row .signal { border-top: 0; }
+#qm-app .chart-link {
+  width: 40px;
+  height: 40px;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+#qm-app .price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+#qm-app .chart-frame {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: 168px 22px;
+  margin-top: 12px;
+  margin-right: -18px;
+}
+#qm-app .chart-plot {
+  position: relative;
+  height: 168px;
+  overflow: hidden;
+  border-bottom: 1px solid light-dark(#cfc6b6, #3a342c);
+  cursor: crosshair;
+}
+#qm-app .chart-scale {
+  position: relative;
+  height: 168px;
+  min-width: 48px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-left: 1px solid light-dark(#cfc6b6, #3a342c);
+  border-bottom: 1px solid light-dark(#cfc6b6, #3a342c);
+  cursor: ns-resize;
+  font-size: 11px;
+  color: light-dark(#3a4450, #c8c0b4);
+}
+#qm-app .chart-scale span {
+  position: absolute;
+  left: 4px;
+  transform: translateY(-50%);
+}
+#qm-app .chart-times {
+  position: relative;
+  height: 22px;
+  cursor: ew-resize;
+  font-size: 11px;
+  color: light-dark(#3a4450, #c8c0b4);
+}
+#qm-app .chart-times span { position: absolute; top: 4px; }
+#qm-app .candle {
+  position: absolute;
+  bottom: 18%;
+  width: 6px;
+  background: light-dark(#0b6b3a, #8dcea0);
+  border-radius: 1px;
+}
+#qm-app .candle.down { background: light-dark(#C23B3B, #f0a097); }
+#qm-app .crosshair-v, #qm-app .crosshair-h {
+  position: absolute;
+  background: light-dark(rgba(28, 36, 48, 0.45), rgba(247, 244, 238, 0.45));
+}
+#qm-app .crosshair-v { top: 0; bottom: 0; width: 1px; }
+#qm-app .crosshair-h { left: 0; right: 0; height: 1px; }
+#qm-app .choice button.on { background: light-dark(#0d5c48, #8dcea0); color: #fffdf8; }
+#qm-app .qty { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; text-align: right; min-width: 4.6rem; }
+#qm-app .qty-num { display: inline-block; min-width: 2rem; text-align: right; font-variant-numeric: tabular-nums; }
+#qm-app .split {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+#qm-app .device-desk .split { grid-template-columns: 1fr 1fr; }
+#qm-app .block h3 { margin-bottom: 8px; }
+#qm-app .choice {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+#qm-app .choice button {
+  border: 1px solid light-dark(#d4cbbd, #3a342c);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+}
+#qm-app .choice button[aria-pressed="true"] {
+  background: light-dark(#1f4e45, #c8ebe3);
+  color: light-dark(#f7f4ee, #14221f);
+  border-color: transparent;
+}
+#qm-app .allow {
+  display: flex;
+  gap: 16px;
+  margin: 4px 0 8px;
+}
+#qm-app .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+#qm-app .check input {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+}
+#qm-app [data-screen="account"] > h3 { margin-top: 16px; }
+#qm-app .warn {
+  margin: 10px 0;
+  color: light-dark(#6d4e12, #e6c98a);
+}
+#qm-app .result {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid light-dark(#e4dccf, #2c2822);
+  font-weight: 650;
+}
+#qm-app .vis-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style>
+<script>
+(function () {
+  var root = document.getElementById("qm-app");
+  var template = document.getElementById("qm-screens");
+  root.querySelectorAll("[data-mount]").forEach(function (mount) {
+    mount.appendChild(template.content.cloneNode(true));
+  });
+
+  var channels = [
+    { key: "equity", label: "Equity" },
+    { key: "fno", label: "F&O" },
+    { key: "commodity", label: "Commodity" }
+  ];
+  var signals = [
+    { symbol: "TCS", channel: "equity", horizon: "Intraday to 7 days", segment: "Equity", exchange: "NSE", lot: 1, side: "SELL", product: "MIS", trigger: 4100, stop: 4145, targets: [["T1", 4040]], ltp: 4088, change: -0.42, age: "2 min ago", ageMin: 2, stored: "active", note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "NIFTY 24500 CE", channel: "fno", horizon: "Intraday", segment: "F&O", exchange: "NFO", lot: 25, side: "BUY", product: "MIS", trigger: 180, stop: 150, targets: [["T1", 220]], age: "3 min ago", ageMin: 3, stored: "active", note: "Sample option call. The F&O channel writes this horizon as Intraday, not Intraday to 7 days." },
+    { symbol: "RELIANCE", channel: "equity", horizon: "Short term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "MIS", trigger: 2450, stop: 2432, targets: [["T1", 2474], ["T2", 2490]], ltp: 2456, change: 0.85, age: "4 min ago", ageMin: 4, stored: "active", mark: { code: "entry", label: "Entry 10:06", title: "Sample minute. A one-minute candle closed through the trigger at this time." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "CRUDEOIL", channel: "commodity", horizon: "Positional", segment: "Commodity", exchange: "MCX", lot: 10, side: "BUY", product: "MIS", trigger: 6200, stop: 6150, targets: [["T1", 6300]], age: "8 min ago", ageMin: 8, stored: "active", note: "Sample commodity call. This channel calls the horizon Positional." },
+    { symbol: "LT", channel: "equity", horizon: "Long term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "CNC", trigger: 3640, stop: 3590, targets: [["T1", 3710]], ltp: 3652, change: 0.33, age: "12 min ago", ageMin: 12, stored: "active", mark: { code: "caution", label: "Caution 10:14", title: "Sample minute. The stop was touched and there is no entry yet." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "SBIN", channel: "equity", horizon: "Long term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "CNC", trigger: 820, stop: 808, targets: [["T1", 836]], ltp: 812, change: -0.18, age: "30 min ago", ageMin: 30, stored: "withdrawn", mark: { code: "not_valid", label: "Not valid", title: "Sample. The window ended with no one-minute close through the trigger." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "HDFCBANK", channel: "equity", horizon: "Intraday to 7 days", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "MIS", trigger: 1650, stop: 1635, targets: [["T1", 1675], ["T2", 1690]], ltp: 1644, change: -0.61, age: "45 min ago", ageMin: 45, stored: "active", mark: { code: "t1_trail", label: "T1 trail 10:31", title: "Sample minute. T1 was touched and a later target remains." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "INFY", channel: "equity", horizon: "Short term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "MIS", trigger: 1850, stop: 1832, targets: [["T1", 1874], ["T2", 1890], ["T3", 1910]], ltp: 1861, change: 1.12, age: "3 hr ago", ageMin: 180, stored: "expired", mark: { code: "t2_trail", label: "T2 trail 12:05", title: "Sample minute. T2 was touched and a later target remains." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "ITC", channel: "equity", horizon: "Short term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "CNC", trigger: 480, stop: 470, targets: [["T1", 492]], ltp: 493, change: 1.48, age: "2 hr ago", ageMin: 120, stored: "active", mark: { code: "final", label: "Final 11:40", title: "Sample minute. The last target was touched. That is the exit." }, note: "Sample signal for development. Not a market recommendation." },
+    { symbol: "TITAN", channel: "equity", horizon: "Long term", segment: "Equity", exchange: "NSE", lot: 1, side: "BUY", product: "CNC", trigger: 3400, stop: 3360, targets: [["T1", 3480]], ltp: 3355, change: -1.32, age: "2 hr ago", ageMin: 120, stored: "active", mark: { code: "stop", label: "Stop 11:52", title: "Sample minute. The stop was touched after entry. That is the exit." }, note: "Sample signal for development. Not a market recommendation." }
+  ];
+  var warnings = {
+    stale: "This signal is stale. Quantivo will not treat it as executable.",
+    expired: "This signal has expired. It cannot be executed.",
+    withdrawn: "The provider withdrew this signal. It cannot be executed."
+  };
+  var state = {
+    screen: "number",
+    mobile: "9845011220",
+    name: "",
+    known: false,
+    entitled: false,
+    includeClosed: false,
+    selected: "RELIANCE",
+    product: "MIS",
+    confirmed: "",
+    channel: "all",
+    scanner: "mani",
+    registered: { equity: true, fno: false, commodity: true },
+    broker: "disconnected",
+    adminKind: "none",
+    adminChannel: "",
+    adminNotice: "",
+    adminWarn: "",
+    signedOut: false,
+    menuOpen: false,
+    risk: { capital: "50000", maxRisk: "500", maxQty: "500", exposure: "200000", mis: true, cnc: true },
+    errors: { number: "", code: "", risk: "" }
+  };
+
+  function sessionHorizon(horizon) {
+    var key = String(horizon || "").toLowerCase();
+    if (key.indexOf("intraday to") >= 0) return false;
+    return key === "intraday" || key === "btst" || key.indexOf("btst ") === 0;
+  }
+  function sevenDay(horizon) {
+    var key = String(horizon || "").toLowerCase();
+    return key.indexOf("intraday to 7") >= 0 || key.indexOf("intarday to 7") >= 0 || key.indexOf("intrday to 7") >= 0;
+  }
+  function derived(signal) {
+    var session = sessionHorizon(signal.horizon);
+    var week = sevenDay(signal.horizon);
+    if (session && signal.ageMin >= 8 * 60) return "expired";
+    if (week && signal.ageMin >= 7 * 24 * 60) return "expired";
+    if (!session && !week && signal.ageMin >= 30 * 24 * 60) return "expired";
+    if (session && signal.ageMin >= 30) return "stale";
+    var horizonKey = String(signal.horizon || "").toLowerCase();
+    if (horizonKey.indexOf("short") === 0 && signal.ageMin >= 30 * 24 * 60) return "stale";
+    if (horizonKey.indexOf("long") === 0 && signal.ageMin >= 30 * 24 * 60) return "stale";
+    return "active";
+  }
+  function numberOf(value) {
+    if (/^\d+\.$/.test(value)) return Number(value.slice(0, -1));
+    if (!/^\d+(\.\d+)?$/.test(value)) return NaN;
+    return Number(value);
+  }
+  function parsedRisk() {
+    var capital = numberOf(state.risk.capital);
+    var maxRisk = numberOf(state.risk.maxRisk);
+    var maxQty = numberOf(state.risk.maxQty);
+    var exposure = numberOf(state.risk.exposure);
+    var products = [];
+    if (state.risk.mis) products.push("MIS");
+    if (state.risk.cnc) products.push("CNC");
+    var error = "";
+    if (!(capital > 0)) error = "Capital set aside must be greater than zero.";
+    else if (!(maxRisk > 0)) error = "Maximum loss per trade must be greater than zero.";
+    else if (maxRisk > capital) error = "Maximum loss cannot exceed the capital set aside.";
+    else if (!/^\d+$/.test(state.risk.maxQty) || !(maxQty >= 1)) error = "Quantity cap must be a whole number of at least 1.";
+    else if (!(exposure > 0)) error = "Exposure cap must be greater than zero.";
+    else if (!products.length) error = "Allow at least one of MIS or CNC.";
+    return { ok: !error, error: error, capital: capital, maxRisk: maxRisk, maxQty: maxQty, exposure: exposure, products: products };
+  }
+  function floorToLot(quantity, lot) {
+    if (quantity < lot) return 0;
+    return quantity - (quantity % lot);
+  }
+  function quote(signal) {
+    var profile = parsedRisk();
+    var lot = signal.lot || 1;
+    var per = Math.abs(signal.trigger - signal.stop);
+    if (!profile.ok) return { ok: false, per: per, lot: lot, quantity: null, reason: profile.error, profile: profile };
+    var fromRisk = floorToLot(Math.floor(profile.maxRisk / per), lot);
+    if (fromRisk < lot) {
+      return { ok: false, per: per, lot: lot, quantity: 0, reason: "One lot is " + lot + ". The loss for that lot is " + rupee(per * lot) + ", which is above the maximum loss, so the quantity is none.", profile: profile };
+    }
+    var quantity = Math.min(fromRisk, floorToLot(profile.maxQty, lot), floorToLot(Math.floor(profile.exposure / signal.trigger), lot));
+    if (quantity < lot) {
+      return { ok: false, per: per, lot: lot, quantity: 0, reason: "The quantity cap or exposure cap does not allow one lot of " + lot + ".", profile: profile };
+    }
+    return { ok: true, per: per, lot: lot, quantity: quantity, reason: "", profile: profile };
+  }
+  function channelLabel(key) {
+    var match = channels.filter(function (item) { return item.key === key; })[0];
+    return match ? match.label : key;
+  }
+  function channelOpen(key) {
+    return !!state.registered[key];
+  }
+  function inView(signal) {
+    if (!channelOpen(signal.channel)) return false;
+    return state.channel === "all" || signal.channel === state.channel;
+  }
+  function group(value) {
+    var parts = value.toFixed(2).split(".");
+    var head = parts[0];
+    var tail = head.slice(-3);
+    var rest = head.slice(0, -3);
+    if (rest) tail = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + tail;
+    return tail + "." + parts[1];
+  }
+  function rupee(value) { return "₹" + group(value); }
+  function price(value) { return group(value); }
+  function findSignal(symbol) {
+    return signals.filter(function (item) { return item.symbol === symbol; })[0];
+  }
+  function inApp() {
+    return state.screen === "home" || state.screen === "detail" || state.screen === "scanners" || state.screen === "account";
+  }
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function fact(label, value) {
+    var row = el("div");
+    row.appendChild(el("dt", "", label));
+    row.appendChild(el("dd", "", value));
+    return row;
+  }
+  function setError(key, message) {
+    state.errors[key] = message;
+  }
+
+  function priceClosed(signal) {
+    return signal.mark && (signal.mark.code === "not_valid" || signal.mark.code === "final" || signal.mark.code === "stop");
+  }
+  function guideMark(signal, status) {
+    if (signal.mark && status !== "expired" && status !== "stale" && status !== "unmatched" && status !== "ambiguous") {
+      var marked = el("span", "guide guide-" + signal.mark.code, signal.mark.label);
+      marked.title = signal.mark.title;
+      return marked;
+    }
+    var code = "window_over";
+    var label = "Window over";
+    var title = "The entry window has ended. The one-minute bars are not in yet, so this is not Entry and not Not valid.";
+    if (status === "expired") {
+      code = "expired";
+      label = "Expired";
+      title = "This signal has expired. It cannot be executed.";
+    } else if (status === "stale") {
+      code = "stale";
+      label = "Stale";
+      title = "This signal is stale. Quantivo will not treat it as executable.";
+    } else if (signal.ageMin < 30) {
+      code = "waiting";
+      label = "Waiting";
+      title = "The entry window is still open. No one-minute close above the trigger is recorded.";
+    }
+    var node = el("span", "guide guide-" + code, label);
+    node.title = title;
+    return node;
+  }
+
+  function chartButton(symbol) {
+    var chart = document.createElement("button");
+    chart.type = "button";
+    chart.className = "chart-link";
+    chart.setAttribute("data-action", "open-chart");
+    chart.setAttribute("data-symbol", symbol);
+    chart.setAttribute("aria-label", "Chart for " + symbol);
+    chart.innerHTML = '<svg width="22" height="20" viewBox="0 0 22 20" aria-hidden="true"><line x1="3" y1="1" x2="3" y2="19" stroke="#0b6a34" stroke-width="1"/><rect x="1" y="4" width="5" height="10" rx="1" fill="#0b6a34"/><line x1="11" y1="2" x2="11" y2="18" stroke="#9c1d1d" stroke-width="1"/><rect x="8.5" y="6" width="5" height="7" rx="1" fill="#9c1d1d"/><line x1="19" y1="1" x2="19" y2="19" stroke="#0b6a34" stroke-width="1"/><rect x="16.5" y="3" width="5" height="12" rx="1" fill="#0b6a34"/></svg>';
+    return chart;
+  }
+
+  function ltpBits(signal) {
+    var wrap = document.createDocumentFragment();
+    wrap.appendChild(document.createTextNode("Last LTP "));
+    if (signal.ltp == null) {
+      wrap.appendChild(document.createTextNode("—"));
+      return wrap;
+    }
+    var tone = signal.change > 0 ? "buy" : signal.change < 0 ? "sell" : "";
+    wrap.appendChild(el("span", tone, price(signal.ltp)));
+    if (typeof signal.change === "number") {
+      var sign = signal.change > 0 ? "+" : "";
+      wrap.appendChild(el("span", tone, " " + sign + signal.change.toFixed(2) + "%"));
+    }
+    return wrap;
+  }
+
+  function paintChart(host) {
+    var signal = findSignal(state.selected);
+    host.replaceChildren();
+    if (!signal) return;
+    host.appendChild(el("h2", "", signal.symbol));
+    var bar = el("div", "choice");
+    ["5m", "1m"].forEach(function (name) {
+      var choice = document.createElement("button");
+      choice.type = "button";
+      choice.textContent = name;
+      choice.setAttribute("data-action", "chart-interval");
+      choice.setAttribute("data-interval", name);
+      if ((state.chartInterval || "5m") === name) choice.className = "on";
+      bar.appendChild(choice);
+    });
+    host.appendChild(bar);
+    var quoted = el("p", "meta");
+    quoted.appendChild(ltpBits(signal));
+    host.appendChild(quoted);
+    host.appendChild(el("p", "fine", "These review candles are samples. A live chart reads the session's one-minute bars when a Fyers app is saved. The price scale is on the right and the latest candle is in view. Drag the price scale to change candle height. Drag the times to fit more candles. The crosshair shows the time and the price."));
+    var frame = el("div", "chart-frame");
+    var plot = el("div", "chart-plot");
+    [[8, 22, false], [16, 30, true], [24, 18, false], [32, 36, false], [40, 28, true], [48, 42, false], [56, 34, false], [64, 48, false], [72, 40, true], [80, 55, false], [88, 46, false]].forEach(function (sample) {
+      var candle = el("span", sample[2] ? "candle down" : "candle");
+      candle.style.left = sample[0] + "%";
+      candle.style.height = sample[1] + "%";
+      plot.appendChild(candle);
+    });
+    var vertical = el("span", "crosshair-v");
+    vertical.style.left = "90%";
+    var horizontal = el("span", "crosshair-h");
+    horizontal.style.top = "46%";
+    plot.appendChild(vertical);
+    plot.appendChild(horizontal);
+    frame.appendChild(plot);
+    var scale = el("div", "chart-scale");
+    [["126.00", "12%"], ["124.00", "38%"], ["123.54", "50%"], ["122.00", "64%"], ["120.00", "90%"]].forEach(function (mark) {
+      var label = el("span", "", mark[0]);
+      label.style.top = mark[1];
+      if (mark[0] === "123.54") label.style.color = "light-dark(#1c2430, #f7f4ee)";
+      scale.appendChild(label);
+    });
+    frame.appendChild(scale);
+    var times = el("div", "chart-times");
+    [["14:00", "0"], ["15:00", "46%"], ["15:25", "82%"]].forEach(function (mark) {
+      var label = el("span", "", mark[0]);
+      label.style.left = mark[1];
+      times.appendChild(label);
+    });
+    frame.appendChild(times);
+    frame.appendChild(el("div", ""));
+    host.appendChild(frame);
+    host.appendChild(el("p", "meta", "Trigger " + price(signal.trigger) + " · Stop " + price(signal.stop)));
+  }
+
+  function paintList(host) {
+    host.replaceChildren();
+    var shown = 0;
+    signals.forEach(function (signal) {
+      var status = derived(signal);
+      if (!inView(signal)) return;
+      if (!state.includeClosed && (status !== "active" || priceClosed(signal))) return;
+      shown += 1;
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "signal";
+      button.setAttribute("data-action", "open-signal");
+      button.setAttribute("data-symbol", signal.symbol);
+      var name = el("span", "sym", signal.symbol);
+      var side = el("span", "side " + (signal.side === "BUY" ? "buy" : "sell"), signal.side === "BUY" ? "Buy" : "Sell");
+      var head = el("span", "symline");
+      head.appendChild(name);
+      head.appendChild(document.createTextNode(" "));
+      head.appendChild(side);
+      head.appendChild(guideMark(signal, status));
+      var meta = el("span", "sub", signal.horizon + " · " + channelLabel(signal.channel) + " · " + signal.exchange + " · lot " + signal.lot + " · " + signal.age);
+      button.appendChild(head);
+      button.appendChild(meta);
+      var meta = el("span", "meta");
+      if (signal.segment === "Equity") {
+        meta.appendChild(ltpBits(signal));
+        meta.appendChild(document.createTextNode(" · "));
+      }
+      meta.appendChild(document.createTextNode("Trigger " + price(signal.trigger)));
+      button.appendChild(meta);
+      var quoted = quote(signal);
+      var qty = el("span", "qty");
+      if (status === "active" && quoted.ok) {
+        qty.appendChild(el("span", "qty-num", String(quoted.quantity)));
+        qty.appendChild(document.createTextNode(" qty"));
+      } else if (status === "active") {
+        qty.textContent = "No qty";
+      }
+      button.appendChild(qty);
+      if (signal.segment === "Equity") {
+        var row = el("div", "signal-row");
+        row.appendChild(button);
+        row.appendChild(chartButton(signal.symbol));
+        host.appendChild(row);
+      } else {
+        host.appendChild(button);
+      }
+    });
+    if (!shown) host.appendChild(el("p", "fine", "No actionable calls in this channel."));
+  }
+
+  function paintDetail(host) {
+    var signal = findSignal(state.selected);
+    host.replaceChildren();
+    if (!signal) return;
+    var status = derived(signal);
+    var quoted = quote(signal);
+    var per = quoted.per;
+    var quantity = quoted.quantity;
+    var profile = quoted.profile;
+    var allowed = profile.products.slice();
+    if (allowed.indexOf(state.product) === -1 && allowed.length) state.product = allowed[0];
+    host.appendChild(el("p", "meta", "Mani's · Mani's Channel"));
+    var title = el("h2", "", signal.symbol);
+    host.appendChild(title);
+    host.appendChild(el("p", "side " + (signal.side === "BUY" ? "buy" : "sell"), (signal.side === "BUY" ? "Buy" : "Sell") + " · " + signal.horizon + " · " + channelLabel(signal.channel) + " · " + signal.exchange + " · lot " + signal.lot + " · " + signal.product + " · " + status.charAt(0).toUpperCase() + status.slice(1)));
+    if (warnings[status]) {
+      host.appendChild(el("p", "warn", warnings[status]));
+      if (status === "stale") host.appendChild(el("p", "fine", "Published " + signal.age + ". This horizon is past the clock set on Admin."));
+    }
+    if (signal.segment === "Equity") {
+      var priceRow = el("div", "price-row");
+      var priceText = el("p", "meta");
+      priceText.appendChild(ltpBits(signal));
+      priceRow.appendChild(priceText);
+      priceRow.appendChild(chartButton(signal.symbol));
+      host.appendChild(priceRow);
+    }
+    var split = el("div", "split");
+    var provider = el("div", "block");
+    provider.appendChild(el("h3", "", "From Mani's"));
+    var providerFacts = el("dl", "facts");
+    providerFacts.appendChild(fact("Channel", channelLabel(signal.channel)));
+    providerFacts.appendChild(fact("Horizon", signal.horizon));
+    providerFacts.appendChild(fact("Segment", signal.segment));
+    providerFacts.appendChild(fact("Lot", String(signal.lot)));
+    providerFacts.appendChild(fact("Trigger", price(signal.trigger)));
+    providerFacts.appendChild(fact("Stop-loss", price(signal.stop)));
+    signal.targets.forEach(function (target) {
+      providerFacts.appendChild(fact(target[0], price(target[1])));
+    });
+    provider.appendChild(providerFacts);
+    provider.appendChild(el("p", "fine", signal.note));
+    var quantivo = el("div", "block");
+    quantivo.appendChild(el("h3", "", "From Quantivo"));
+    var qFacts = el("dl", "facts");
+    qFacts.appendChild(fact("Suggested quantity", quoted.ok ? String(quantity) : "None"));
+    qFacts.appendChild(fact(signal.segment === "Equity" ? "Per-share risk" : "Per-unit risk", rupee(per)));
+    qFacts.appendChild(fact("Estimated risk", quoted.ok ? rupee(per * quantity) : "—"));
+    qFacts.appendChild(fact("Notional", quoted.ok ? rupee(signal.trigger * quantity) : "—"));
+    qFacts.appendChild(fact("Capital set aside", profile.ok ? rupee(profile.capital) : state.risk.capital));
+    qFacts.appendChild(fact("Maximum loss", profile.ok ? rupee(profile.maxRisk) : state.risk.maxRisk));
+    quantivo.appendChild(qFacts);
+    if (!quoted.ok) quantivo.appendChild(el("p", "warn", quoted.reason));
+    quantivo.appendChild(el("p", "fine", "Quantity = floor(maximum rupee risk / per-share risk), then rounded down to the lot size and capped. Capital allocation is cash set aside, not the amount at risk."));
+    quantivo.appendChild(el("p", "fine", "Available broker funds were not checked. Broker fund balances are not connected in this build."));
+    split.appendChild(provider);
+    split.appendChild(quantivo);
+    host.appendChild(split);
+    host.appendChild(el("h3", "", "Broker"));
+    host.appendChild(el("p", "lead", state.broker === "connected"
+      ? "Simulated session only. Quantivo will not send an order."
+      : "No simulated broker session. Order placement is disabled in this build."));
+    if (status === "active" && quoted.ok) {
+      host.appendChild(el("p", "meta", "Product to confirm. Quantivo does not convert MIS into CNC."));
+      var choice = el("div", "choice");
+      allowed.forEach(function (product) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-action", "set-product");
+        button.setAttribute("data-product", product);
+        button.setAttribute("aria-pressed", state.product === product ? "true" : "false");
+        button.textContent = product;
+        choice.appendChild(button);
+      });
+      host.appendChild(choice);
+      if (state.confirmed === signal.symbol) {
+        host.appendChild(el("p", "result", "This build will not send an order. No order was created."));
+      } else {
+        var confirm = document.createElement("button");
+        confirm.type = "button";
+        confirm.className = "primary";
+        confirm.setAttribute("data-action", "confirm");
+        confirm.textContent = "Confirm " + quantity + " " + state.product;
+        host.appendChild(confirm);
+      }
+    }
+  }
+
+  function paint() {
+    var app = inApp();
+    root.querySelectorAll(".chrome").forEach(function (chrome) {
+      chrome.setAttribute("data-mode", app ? "app" : "gate");
+    });
+    root.querySelectorAll(".appnav, .rail").forEach(function (nav) {
+      nav.hidden = !app;
+    });
+    var up = state.screen === "detail" || state.screen === "activate";
+    root.querySelectorAll(".menu-button").forEach(function (button) {
+      button.hidden = !app || up;
+      button.textContent = "☰";
+      button.setAttribute("aria-label", state.menuOpen ? "Close navigation" : "Open navigation");
+      button.setAttribute("aria-expanded", state.menuOpen ? "true" : "false");
+    });
+    root.querySelectorAll(".menu-sheet").forEach(function (nav) {
+      nav.hidden = !app || !state.menuOpen;
+    });
+    root.querySelectorAll(".device-phone .stage").forEach(function (stage) {
+      stage.hidden = app && state.menuOpen;
+    });
+    root.querySelectorAll(".back").forEach(function (button) {
+      button.hidden = state.screen !== "detail" && state.screen !== "activate" && state.screen !== "code";
+      button.textContent = "←";
+      button.setAttribute("aria-label", "Back");
+    });
+    root.querySelectorAll("[data-screen]").forEach(function (section) {
+      section.hidden = section.getAttribute("data-screen") !== state.screen;
+    });
+    var current = state.screen === "detail" ? "home" : state.screen;
+    root.querySelectorAll("[data-go]").forEach(function (button) {
+      if (app && button.getAttribute("data-go") === current) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+    root.querySelectorAll("[data-mobile]").forEach(function (input) {
+      if (input !== document.activeElement) input.value = state.mobile;
+    });
+    root.querySelectorAll("[data-name]").forEach(function (input) {
+      if (input !== document.activeElement) input.value = state.name;
+    });
+    root.querySelectorAll("[data-risk]").forEach(function (input) {
+      var key = input.getAttribute("data-risk");
+      if (input !== document.activeElement) input.value = state.risk[key];
+    });
+    root.querySelectorAll("[data-allow]").forEach(function (input) {
+      var key = input.getAttribute("data-allow") === "MIS" ? "mis" : "cnc";
+      input.checked = !!state.risk[key];
+    });
+    root.querySelectorAll("[data-sent-to]").forEach(function (node) {
+      node.textContent = "+91 " + state.mobile;
+    });
+    root.querySelectorAll("[data-signed-out]").forEach(function (node) {
+      node.hidden = !state.signedOut;
+    });
+    root.querySelectorAll("[data-error]").forEach(function (node) {
+      var message = state.errors[node.getAttribute("data-error")] || "";
+      node.hidden = !message;
+      node.textContent = message;
+    });
+    root.querySelectorAll("[data-list]").forEach(paintList);
+    root.querySelectorAll("[data-detail]").forEach(paintDetail);
+    root.querySelectorAll("[data-chart]").forEach(paintChart);
+    var otherScanner = state.scanner === "other";
+    var locked = !otherScanner && state.channel !== "all" && !channelOpen(state.channel);
+    root.querySelectorAll("[data-feed]").forEach(function (node) { node.hidden = otherScanner || locked; });
+    root.querySelectorAll("[data-locked]").forEach(function (node) { node.hidden = !locked; });
+    root.querySelectorAll("[data-locked-copy]").forEach(function (node) {
+      node.textContent = "You are not registered for the " + channelLabel(state.channel) + " channel. Mani's sends it on its own Telegram channel, so these calls stay hidden.";
+    });
+    var missing = channels.filter(function (item) { return !channelOpen(item.key); });
+    root.querySelectorAll("[data-channel-note]").forEach(function (node) {
+      node.hidden = locked || state.channel !== "all" || !missing.length;
+      node.textContent = missing.length ? "Not registered for " + missing.map(function (item) { return item.label; }).join(", ") + ". That channel is not shown." : "";
+    });
+    var onHome = state.screen === "home";
+    root.querySelectorAll(".device-phone .bar .mark").forEach(function (node) { node.hidden = onHome; });
+    root.querySelectorAll(".device-phone [data-bar-scanners]").forEach(function (node) { node.hidden = !onHome; });
+    root.querySelectorAll("[data-action='scanner']").forEach(function (button) {
+      button.setAttribute("aria-pressed", button.getAttribute("data-scanner") === state.scanner ? "true" : "false");
+    });
+    root.querySelectorAll("[data-home-title]").forEach(function (node) {
+      node.textContent = otherScanner ? "Another scanner" : "Mani's Channel";
+    });
+    root.querySelectorAll("[data-home-mark]").forEach(function (node) {
+      node.textContent = otherScanner ? "A" : "M";
+    });
+    root.querySelectorAll("[data-home-meta]").forEach(function (node) {
+      node.textContent = otherScanner
+        ? "Review only. This scanner has no channels and no calls."
+        : "Mani's · Equity, F&O, and Commodity channels · Last publication 2 min ago";
+    });
+    root.querySelectorAll("[data-mani-channels]").forEach(function (node) {
+      node.hidden = otherScanner;
+    });
+    root.querySelectorAll("[data-other-empty]").forEach(function (node) {
+      node.hidden = !otherScanner;
+    });
+    root.querySelectorAll("[data-action='channel']").forEach(function (button) {
+      button.setAttribute("aria-pressed", button.getAttribute("data-channel") === state.channel ? "true" : "false");
+    });
+    root.querySelectorAll("[data-channels]").forEach(function (host) {
+      host.replaceChildren();
+      channels.forEach(function (item) {
+        var row = el("div", "channel");
+        var open = channelOpen(item.key);
+        var words = [];
+        var seenWords = {};
+        signals.forEach(function (signal) {
+          if (signal.channel !== item.key || seenWords[signal.horizon]) return;
+          seenWords[signal.horizon] = true;
+          words.push(signal.horizon);
+        });
+        row.appendChild(el("strong", "", item.label));
+        row.appendChild(el("span", open ? "" : "meta", open ? "Registered" : "Not registered"));
+        row.appendChild(el("span", "words", "Horizons · " + words.join(", ")));
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "ghost";
+        toggle.setAttribute("data-action", "toggle-channel");
+        toggle.setAttribute("data-channel", item.key);
+        toggle.textContent = open ? "Remove registration" : "Register";
+        row.appendChild(toggle);
+        host.appendChild(row);
+      });
+    });
+    var closed = signals.filter(function (signal) {
+      if (!channelOpen(signal.channel)) return false;
+      if (state.channel !== "all" && signal.channel !== state.channel) return false;
+      return derived(signal) !== "active" || priceClosed(signal);
+    }).length;
+    root.querySelectorAll("[data-action='call-view']").forEach(function (button) {
+      var allSide = button.getAttribute("data-view") === "all";
+      var selected = allSide === state.includeClosed;
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      if (allSide) button.textContent = closed === 0 ? "All" : "All · " + closed;
+    });
+    root.querySelectorAll("[data-broker-line]").forEach(function (node) {
+      node.textContent = state.broker === "connected" ? "Broker connected · simulated" : "Broker disconnected";
+    });
+    root.querySelectorAll("[data-broker-copy]").forEach(function (node) {
+      node.textContent = state.broker === "connected"
+        ? "Simulated session only. Quantivo will not send an order."
+        : "No simulated broker session. Order placement is disabled in this build.";
+    });
+    root.querySelectorAll("[data-action='broker']").forEach(function (button) {
+      button.textContent = state.broker === "connected" ? "Disconnect" : "Connect simulated broker";
+    });
+    root.querySelectorAll("[data-account-mobile]").forEach(function (node) {
+      node.textContent = "+91 " + state.mobile;
+    });
+    root.querySelectorAll("[data-admin-kind]").forEach(function (button) {
+      button.setAttribute("aria-pressed", button.getAttribute("data-admin-kind") === state.adminKind ? "true" : "false");
+    });
+    root.querySelectorAll("[data-admin-channel]").forEach(function (input) {
+      if (input !== document.activeElement) input.value = state.adminChannel;
+    });
+    root.querySelectorAll("[data-admin-fields]").forEach(function (node) {
+      node.hidden = state.adminKind !== "telegram";
+    });
+    root.querySelectorAll("[data-admin-notice]").forEach(function (node) {
+      node.hidden = !state.adminNotice;
+      node.textContent = state.adminNotice;
+    });
+    root.querySelectorAll("[data-admin-warn]").forEach(function (node) {
+      node.hidden = !state.adminWarn;
+      node.textContent = state.adminWarn;
+    });
+    root.querySelectorAll("[data-admin-warn-actions]").forEach(function (node) {
+      node.hidden = !state.adminWarn;
+    });
+    root.querySelectorAll("[data-entitlement-line]").forEach(function (node) {
+      node.textContent = state.entitled ? "Entitlement active." : "Not activated.";
+    });
+  }
+
+  root.addEventListener("input", function (event) {
+    var input = event.target;
+    if (input.matches("[data-mobile]")) state.mobile = input.value.replace(/\D/g, "").slice(0, 10);
+    if (input.matches("[data-name]")) state.name = input.value;
+    if (input.matches("[data-otp]")) state.otpDraft = input.value;
+    if (input.matches("[data-admin-channel]")) state.adminChannel = input.value.trim();
+    if (input.matches("[data-risk]")) {
+      var key = input.getAttribute("data-risk");
+      state.risk[key] = key === "maxQty" ? input.value.replace(/\D/g, "") : input.value.replace(/[^\d.]/g, "");
+      state.errors.risk = parsedRisk().error;
+      paint();
+    }
+    if (input.matches("[data-allow]")) {
+      state.risk[input.getAttribute("data-allow") === "MIS" ? "mis" : "cnc"] = input.checked;
+      state.errors.risk = parsedRisk().error;
+      paint();
+    }
+  });
+
+  root.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-action]");
+    if (!button || !root.contains(button)) return;
+    var action = button.getAttribute("data-action");
+    if (action === "request-code") {
+      state.mobile = state.mobile.replace(/\D/g, "");
+      if (!/^[6-9]\d{9}$/.test(state.mobile)) {
+        setError("number", "Enter a valid Indian mobile number.");
+      } else {
+        setError("number", "");
+        state.signedOut = false;
+        state.screen = "code";
+      }
+    } else if (action === "change-number") {
+      setError("code", "");
+      state.screen = "number";
+    } else if (action === "verify") {
+      var codes = [];
+      root.querySelectorAll("[data-otp]").forEach(function (input) {
+        if (input.value) codes.push(input.value.trim());
+      });
+      var code = codes[0] || "";
+      if (code !== "482913") {
+        setError("code", "That code does not match.");
+      } else {
+        setError("code", "");
+        state.screen = state.known ? "home" : "start";
+        state.known = true;
+      }
+    } else if (action === "to-activate") {
+      var profile = parsedRisk();
+      state.errors.risk = profile.error;
+      if (profile.ok) state.screen = "activate";
+    } else if (action === "activate") {
+      state.entitled = true;
+      state.screen = "home";
+    } else if (action === "scanner") {
+      state.scanner = button.getAttribute("data-scanner");
+      state.channel = "all";
+    } else if (action === "channel") {
+      state.channel = button.getAttribute("data-channel");
+    } else if (action === "register-channel") {
+      if (state.channel !== "all") state.registered[state.channel] = true;
+    } else if (action === "toggle-channel") {
+      var channelKey = button.getAttribute("data-channel");
+      state.registered[channelKey] = !state.registered[channelKey];
+      if (!state.registered[channelKey] && state.channel === channelKey) state.channel = "all";
+    } else if (action === "call-view") {
+      state.includeClosed = button.getAttribute("data-view") === "all";
+    } else if (action === "open-signal") {
+      state.selected = button.getAttribute("data-symbol");
+      state.product = findSignal(state.selected).product;
+      state.confirmed = "";
+      state.screen = "detail";
+    } else if (action === "open-chart") {
+      state.selected = button.getAttribute("data-symbol");
+      state.chartFrom = state.screen;
+      state.screen = "chart";
+    } else if (action === "chart-interval") {
+      state.chartInterval = button.getAttribute("data-interval");
+    } else if (action === "set-product") {
+      state.product = button.getAttribute("data-product");
+      state.confirmed = "";
+    } else if (action === "confirm") {
+      state.confirmed = state.selected;
+    } else if (action === "back") {
+      if (state.screen === "chart") state.screen = state.chartFrom || "home";
+      else if (state.screen === "detail") state.screen = "home";
+      else if (state.screen === "activate") state.screen = "start";
+      else if (state.screen === "code") state.screen = "number";
+    } else if (action === "menu") {
+      state.menuOpen = !state.menuOpen;
+    } else if (action === "go") {
+      state.menuOpen = false;
+      var next = button.getAttribute("data-go");
+      if (next === "home" && !state.entitled) next = "activate";
+      state.screen = next;
+    } else if (action === "open-feed") {
+      state.screen = state.entitled ? "home" : "activate";
+    } else if (action === "broker") {
+      state.broker = state.broker === "connected" ? "disconnected" : "connected";
+    } else if (action === "admin-kind") {
+      state.adminKind = button.getAttribute("data-admin-kind");
+      state.adminNotice = "";
+    } else if (action === "admin-delete") {
+      state.adminNotice = "";
+      state.adminWarn = "Delete Equity? This removes the channel and its stored calls. Traders will no longer see it. This cannot be undone.";
+    } else if (action === "admin-warn-keep") {
+      state.adminWarn = "";
+    } else if (action === "admin-warn-confirm") {
+      state.adminWarn = "";
+      state.adminNotice = "Equity was not removed in this review. The phone would delete it only after this warning.";
+    } else if (action === "admin-save") {
+      if (state.adminKind === "telegram" && state.adminChannel.length < 3) {
+        state.adminNotice = "Enter the Telegram channel name.";
+      } else if (state.adminKind === "telegram") {
+        state.adminNotice = "Equity is saved. The channel id was taken from the joined chat.";
+      } else if (state.adminKind === "none") {
+        state.adminNotice = "Equity stays on the sample.";
+      } else if (state.adminKind === "http") {
+        state.adminNotice = "The HTTP settings are saved. No reader calls that URL yet.";
+      } else {
+        state.adminNotice = "Equity is saved. The shared Telegram login is still set on the worker.";
+      }
+    } else if (action === "logout") {
+      state.screen = "number";
+      state.signedOut = true;
+      state.confirmed = "";
+      root.querySelectorAll("[data-otp]").forEach(function (input) { input.value = ""; });
+    }
+    paint();
+  });
+
+  paint();
+})();
+</script>
+
+</body>
+</html>
