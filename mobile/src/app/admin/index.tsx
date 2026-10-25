@@ -13,6 +13,7 @@ import type {
   FeedOut,
   FyersConfigOut,
   FyersConnectOut,
+  KiteAppOut,
   MeOut,
   ScannerOut,
   TelegramLoginOut,
@@ -82,12 +83,23 @@ export default function AdminScreen() {
   const [fyersAppId, setFyersAppId] = useState("");
   const [fyersSecret, setFyersSecret] = useState("");
   const [fyersPin, setFyersPin] = useState("");
+  const [fyersClient, setFyersClient] = useState("");
+  const [fyersTotp, setFyersTotp] = useState("");
   const [fyersEdit, setFyersEdit] = useState(false);
   const fyersRedirect = `${API_URL.replace(/\/$/, "")}/api/v1/admin/fyers/callback`;
   const [fyersNote, setFyersNote] = useState<string | null>(null);
   const [fyersError, setFyersError] = useState(false);
   const [fyersSaving, setFyersSaving] = useState(false);
   const [fyersRemove, setFyersRemove] = useState(false);
+  const [kite, setKite] = useState<KiteAppOut | null>(null);
+  const [kiteKey, setKiteKey] = useState("");
+  const [kiteSecret, setKiteSecret] = useState("");
+  const [kiteEdit, setKiteEdit] = useState(false);
+  const kiteRedirect = `${API_URL.replace(/\/$/, "")}/api/v1/broker/zerodha/callback`;
+  const [kiteNote, setKiteNote] = useState<string | null>(null);
+  const [kiteError, setKiteError] = useState(false);
+  const [kiteSaving, setKiteSaving] = useState(false);
+  const [kiteRemove, setKiteRemove] = useState(false);
   const [feeds, setFeeds] = useState<FeedOut[]>([]);
   const [scanners, setScanners] = useState<ScannerOut[]>([]);
   const [channelScannerId, setChannelScannerId] = useState("");
@@ -109,15 +121,17 @@ export default function AdminScreen() {
       router.replace("/signals");
       return;
     }
-    const [nextLogin, nextFyers, nextClocks, nextFeeds, catalogue] = await Promise.all([
+    const [nextLogin, nextFyers, nextKite, nextClocks, nextFeeds, catalogue] = await Promise.all([
       api<TelegramLoginOut>("/api/v1/admin/telegram-login"),
       api<FyersConfigOut>("/api/v1/admin/fyers"),
+      api<KiteAppOut>("/api/v1/admin/zerodha"),
       api<CallClocksOut>("/api/v1/admin/call-clocks"),
       api<FeedOut[]>("/api/v1/admin/source-channels"),
       api<ScannerOut[]>("/api/v1/scanners"),
     ]);
     setLogin(nextLogin);
-    setFyers(nextFyers);
+    applyFyers(nextFyers);
+    setKite(nextKite);
     setClocks(nextClocks);
     setIntradayMinutes(String(nextClocks.intraday_btst_minutes));
     setShortDays(String(nextClocks.short_term_days));
@@ -307,6 +321,15 @@ export default function AdminScreen() {
     }
   }
 
+  function applyFyers(saved: FyersConfigOut) {
+    setFyers(saved);
+    setFyersAppId(saved.app_id ?? "");
+    setFyersClient(saved.client_id ?? "");
+    setFyersSecret("");
+    setFyersPin("");
+    setFyersTotp("");
+  }
+
   async function saveFyers() {
     setFyersSaving(true);
     setFyersNote(null);
@@ -319,20 +342,67 @@ export default function AdminScreen() {
           app_secret: fyersSecret.trim(),
           pin: fyersPin.trim(),
           redirect_uri: fyersRedirect,
+          client_id: fyersClient.trim(),
+          totp_key: fyersTotp.trim(),
         }),
       });
-      setFyers(saved);
-      setFyersAppId("");
-      setFyersSecret("");
-      setFyersPin("");
+      applyFyers(saved);
       setFyersEdit(false);
       setFyersError(false);
-      setFyersNote("Saved. Sign in on Fyers once. This screen asks again after 15 days.");
+      setFyersNote(
+        saved.totp_saved
+          ? "Saved. The server signs in after 6:30 AM IST. Restart the API once so this process loads the key."
+          : "Saved. Add the Fyers client id and TOTP key, or sign in on Fyers.",
+      );
     } catch (caught) {
       setFyersError(true);
       setFyersNote(caught instanceof ApiRequestError ? caught.message : "The Fyers app could not be saved.");
     } finally {
       setFyersSaving(false);
+    }
+  }
+
+  async function saveKite() {
+    setKiteSaving(true);
+    setKiteNote(null);
+    setKiteRemove(false);
+    try {
+      const saved = await api<KiteAppOut>("/api/v1/admin/zerodha", {
+        method: "PUT",
+        body: JSON.stringify({
+          api_key: kiteKey.trim(),
+          api_secret: kiteSecret.trim(),
+          redirect_uri: kiteRedirect,
+        }),
+      });
+      setKite(saved);
+      setKiteKey("");
+      setKiteSecret("");
+      setKiteEdit(false);
+      setKiteError(false);
+      setKiteNote("Saved. Traders sign in on Zerodha from Account. The session ends at 6:00 AM IST.");
+    } catch (caught) {
+      setKiteError(true);
+      setKiteNote(caught instanceof ApiRequestError ? caught.message : "The Kite app could not be saved.");
+    } finally {
+      setKiteSaving(false);
+    }
+  }
+
+  async function removeKite() {
+    setKiteSaving(true);
+    setKiteNote(null);
+    try {
+      setKite(await api<KiteAppOut>("/api/v1/admin/zerodha", { method: "DELETE" }));
+      setKiteRemove(false);
+      setKiteEdit(false);
+      setKiteError(false);
+      setKiteNote("Removed. Traders sign in again after a Kite app is saved.");
+    } catch (caught) {
+      setKiteError(true);
+      setKiteNote(caught instanceof ApiRequestError ? caught.message : "The Kite app could not be removed.");
+    } finally {
+      setKiteSaving(false);
     }
   }
 
@@ -344,7 +414,7 @@ export default function AdminScreen() {
       const started = await api<FyersConnectOut>("/api/v1/admin/fyers/connect", { method: "POST" });
       await Linking.openURL(started.url);
       setFyersError(false);
-      setFyersNote("Fyers is open. Sign in there once. Come back here when it says connected. This lasts 15 days.");
+      setFyersNote("Fyers is open. Sign in there. The access token lasts until 6:30 AM IST.");
     } catch (caught) {
       setFyersError(true);
       setFyersNote(caught instanceof ApiRequestError ? caught.message : "Fyers could not be opened.");
@@ -357,11 +427,7 @@ export default function AdminScreen() {
     setFyersSaving(true);
     setFyersNote(null);
     try {
-      const saved = await api<FyersConfigOut>("/api/v1/admin/fyers", { method: "DELETE" });
-      setFyers(saved);
-      setFyersAppId("");
-      setFyersSecret("");
-      setFyersPin("");
+      applyFyers(await api<FyersConfigOut>("/api/v1/admin/fyers", { method: "DELETE" }));
       setFyersEdit(false);
       setFyersRemove(false);
       setFyersError(false);
@@ -472,6 +538,13 @@ export default function AdminScreen() {
             {fyers?.connected ? "Connected" : fyers?.app_saved ? "Sign-in needed" : "Not set"}
           </Text>
           <Text style={ui.meta}>{fyers?.detail}</Text>
+          {fyers?.app_saved ? (
+            <>
+              <Text style={ui.meta}>{fyers.app_id ? `App id ${fyers.app_id}` : "App id saved"}</Text>
+              <Text style={ui.meta}>{fyers.client_id ? `Client id ${fyers.client_id}` : "Client id not saved"}</Text>
+              <Text style={ui.meta}>{fyers.totp_saved ? "TOTP key saved" : "TOTP key not saved"}</Text>
+            </>
+          ) : null}
           {fyersRemove ? (
             <Warning
               title="Remove the Fyers app?"
@@ -499,7 +572,7 @@ export default function AdminScreen() {
                     }}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    placeholder="Fyers app id"
+                    placeholder={fyers?.app_saved ? "Saved app id" : "Fyers app id"}
                     placeholderTextColor={colors.muted}
                   />
                   <Text style={ui.label}>App secret</Text>
@@ -513,7 +586,7 @@ export default function AdminScreen() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     secureTextEntry
-                    placeholder="Fyers app secret"
+                    placeholder={fyers?.app_saved ? "Saved. Leave blank to keep it." : "Fyers app secret"}
                     placeholderTextColor={colors.muted}
                   />
                   <Text style={ui.label}>Fyers PIN</Text>
@@ -526,17 +599,63 @@ export default function AdminScreen() {
                     }}
                     keyboardType="number-pad"
                     secureTextEntry
-                    placeholder="4-digit PIN"
+                    placeholder={fyers?.app_saved ? "Saved. Leave blank to keep it." : "4-digit PIN"}
                     placeholderTextColor={colors.muted}
                   />
-                  <Text style={ui.meta}>The PIN stays on the server so the morning token can refresh. It is not your Fyers password.</Text>
+                  <Text style={ui.meta}>
+                    {fyers?.app_saved
+                      ? "The secret and PIN stay on the server. Leave a field blank to keep the saved value."
+                      : "The PIN stays on the server. It is not your Fyers password."}
+                  </Text>
+                  <Text style={ui.label}>Fyers client id</Text>
+                  <TextInput
+                    style={ui.input}
+                    value={fyersClient}
+                    onChangeText={(value) => {
+                      setFyersClient(value.toUpperCase());
+                      setFyersNote(null);
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    placeholder="Client id from the Fyers login page"
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Text style={ui.label}>TOTP key</Text>
+                  <TextInput
+                    style={ui.input}
+                    value={fyersTotp}
+                    onChangeText={(value) => {
+                      setFyersTotp(value.replace(/\s/g, "").toUpperCase());
+                      setFyersNote(null);
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    secureTextEntry
+                    placeholder={
+                      fyers?.totp_saved
+                        ? "Saved. Leave blank to keep it."
+                        : "External TOTP key, not a 6-digit code"
+                    }
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Text style={ui.meta}>
+                    Save both once. After 6:30 AM IST the server signs in with this key and the PIN.
+                  </Text>
                   <Pressable
                     style={ui.primary}
                     disabled={
                       fyersSaving
-                      || fyersAppId.trim().length === 0
-                      || fyersSecret.trim().length === 0
-                      || fyersPin.length !== 4
+                      || (!fyers?.app_saved && (
+                        fyersAppId.trim().length === 0
+                        || fyersSecret.trim().length === 0
+                        || fyersPin.length !== 4
+                      ))
+                      || (Boolean(fyers?.app_saved) && fyersPin.length > 0 && fyersPin.length !== 4)
+                      || !(
+                        (fyersClient.trim().length === 0 && fyersTotp.trim().length === 0)
+                        || (fyersClient.trim().length > 0 && fyersTotp.trim().length > 0)
+                        || Boolean(fyers?.totp_saved && fyersTotp.trim().length === 0)
+                      )
                     }
                     onPress={() => void saveFyers()}
                   >
@@ -548,7 +667,7 @@ export default function AdminScreen() {
                   <Text style={ui.ghostText}>Update the Fyers app</Text>
                 </Pressable>
               )}
-              {fyers?.app_saved && !fyers.connected ? (
+              {fyers?.app_saved && !fyers.totp_saved && !fyers.connected ? (
                 <Pressable style={ui.primary} disabled={fyersSaving} onPress={() => void signInFyers()}>
                   <Text style={ui.primaryText}>{fyersSaving ? "Opening…" : "Sign in on Fyers"}</Text>
                 </Pressable>
@@ -562,6 +681,78 @@ export default function AdminScreen() {
           )}
           {fyersNote ? (
             <Text style={[ui.meta, { color: fyersError ? colors.danger : colors.accent, marginTop: 12 }]}>{fyersNote}</Text>
+          ) : null}
+        </View>
+        <View style={ui.card}>
+          <Text style={ui.rowTitle}>Zerodha trading</Text>
+          <Text style={ui.meta}>{kite?.app_saved ? "Kite app saved" : "Not set"}</Text>
+          <Text style={ui.meta}>{kite?.detail}</Text>
+          {kiteRemove ? (
+            <Warning
+              title="Remove the Kite app?"
+              body="Traders will need to sign in on Zerodha again after the app is saved. This build does not send an order."
+              confirmLabel="Remove Kite app"
+              cancelLabel="Keep the Kite app"
+              busy={kiteSaving}
+              onCancel={() => setKiteRemove(false)}
+              onConfirm={() => void removeKite()}
+            />
+          ) : (
+            <>
+              {!kite?.app_saved || kiteEdit ? (
+                <>
+                  <Text style={[ui.label, { marginTop: 12 }]}>Callback URL</Text>
+                  <Text selectable style={ui.meta}>{kiteRedirect}</Text>
+                  <Text style={ui.meta}>Register this exact URL on the Kite Connect app before you save.</Text>
+                  <Text style={ui.label}>Api key</Text>
+                  <TextInput
+                    style={ui.input}
+                    value={kiteKey}
+                    onChangeText={(value) => {
+                      setKiteKey(value);
+                      setKiteNote(null);
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="Kite api key"
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Text style={ui.label}>Api secret</Text>
+                  <TextInput
+                    style={ui.input}
+                    value={kiteSecret}
+                    onChangeText={(value) => {
+                      setKiteSecret(value);
+                      setKiteNote(null);
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    placeholder="Kite api secret"
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Pressable
+                    style={ui.primary}
+                    disabled={kiteSaving || kiteKey.trim().length === 0 || kiteSecret.trim().length === 0}
+                    onPress={() => void saveKite()}
+                  >
+                    <Text style={ui.primaryText}>{kiteSaving ? "Saving…" : "Save Kite app"}</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable style={ui.ghost} disabled={kiteSaving} onPress={() => setKiteEdit(true)}>
+                  <Text style={ui.ghostText}>Update the Kite app</Text>
+                </Pressable>
+              )}
+              {kite?.app_saved ? (
+                <Pressable style={ui.ghost} disabled={kiteSaving} onPress={() => setKiteRemove(true)}>
+                  <Text style={[ui.ghostText, { color: colors.danger }]}>Remove Kite app</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+          {kiteNote ? (
+            <Text style={[ui.meta, { color: kiteError ? colors.danger : colors.accent, marginTop: 12 }]}>{kiteNote}</Text>
           ) : null}
         </View>
         <Text style={ui.section}>Scanners</Text>

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TargetOut(BaseModel):
@@ -151,8 +151,32 @@ class MockFeedSyncOut(BaseModel):
     revised: int
 
 
+class OrderTargetIn(BaseModel):
+    label: str = Field(min_length=1, max_length=16, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,15}$")
+    price: str = Field(pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+
+
 class OrderRequest(BaseModel):
     signal_id: UUID
     idempotency_key: str = Field(min_length=8, max_length=80, pattern=r"^[A-Za-z0-9_:\-]+$")
     product: Literal["MIS", "CNC"]
     quantity: int = Field(gt=0, le=1_000_000)
+    side: Literal["BUY", "SELL"] | None = None
+    trigger_price: str | None = Field(default=None, pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+    stop_loss: str | None = Field(default=None, pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+    targets: list[OrderTargetIn] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def trigger_and_stop_together(self) -> "OrderRequest":
+        if (self.trigger_price is None) != (self.stop_loss is None):
+            raise ValueError("Enter both the trigger and the stop.")
+        return self
+
+
+class OrderPreviewIn(BaseModel):
+    signal_id: UUID
+    side: Literal["BUY", "SELL"]
+    product: Literal["MIS", "CNC"]
+    trigger_price: str = Field(pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+    stop_loss: str = Field(pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+    targets: list[OrderTargetIn] = Field(min_length=1, max_length=4)

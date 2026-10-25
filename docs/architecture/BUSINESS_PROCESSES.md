@@ -70,7 +70,7 @@ flowchart TD
   confirm -->|Yes| server[Server repeats the checks]
   server --> decision{All checks pass?}
   decision -->|No| denied[Show the server reason]
-  decision -->|Yes| disabled[Tell the trader that this build will not send an order]
+  decision -->|Yes| saved[Save one intent and say Zerodha was not sent the order]
 ```
 
 The home list is one scanner. It opens on every registered channel. Equity, F&O, and Commodity narrow that list and remember the last choice on the device. Choosing a channel the trader has not registered shows that fact and no calls. Choosing All names any channel left out. The horizon is printed on each call. There is no second row of horizon tabs. "Intraday" and "Intraday to 7 days" stay different text unless a channel adapter maps them on purpose. Closed calls stay behind the separate control that reveals stale and expired signals.
@@ -81,7 +81,7 @@ The trader should be able to see three different facts at once:
 
 1. What Mani's supplied, including trigger, stop, and targets.
 2. What Quantivo calculated, including the formula and the statement that capital allocation is not the amount at risk.
-3. Whether a simulated broker session exists, and that order placement is still disabled.
+3. Whether Zerodha is signed in, and that a saved order has not been sent.
 
 A missing fund check is stated. It is not displayed as a zero balance or as a passing check.
 

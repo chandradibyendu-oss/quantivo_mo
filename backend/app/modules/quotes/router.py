@@ -29,6 +29,9 @@ def _status() -> FyersConfigOut:
         configured=current.configured,
         app_saved=current.app_saved,
         connected=current.connected,
+        app_id=current.app_id,
+        client_id=current.client_id,
+        totp_saved=current.totp_saved,
         refresh_until=current.refresh_until,
         detail=current.detail,
     )
@@ -47,13 +50,23 @@ def update_fyers(
     db: Db,
     correlation_id: CorrelationId,
 ) -> FyersConfigOut:
-    save_fyers_app(body.app_id, body.app_secret, body.pin, body.redirect_uri)
+    save_fyers_app(
+        body.app_id,
+        body.app_secret,
+        body.pin,
+        body.redirect_uri,
+        client_id=body.client_id,
+        totp_key=body.totp_key,
+    )
     record(
         db,
         action="quotes.fyers_saved",
         entity_type="quote_feed",
         entity_id=None,
-        payload={"app_saved": True},
+        payload={
+            "app_saved": True,
+            "morning_login": bool(body.client_id.strip() and body.totp_key.strip()),
+        },
         actor_user_id=principal.user.id,
         correlation_id=correlation_id,
     )

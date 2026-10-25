@@ -25,7 +25,7 @@ PERMISSIONS = (
     ("scanners.read", "Read the scanner catalogue"),
     ("subscriptions.activate", "Activate a development scanner entitlement"),
     ("signals.read", "Read entitled scanner signals"),
-    ("broker.connect", "Connect the simulated broker"),
+    ("broker.connect", "Sign in on Zerodha"),
     ("orders.create", "Submit an order request"),
     ("admin.users.read", "Read user accounts in a future admin portal"),
     ("admin.audit.read", "Read audit events in a future admin portal"),

@@ -94,15 +94,12 @@ flowchart TD
   product -->|No| rejectProduct[422 product_not_allowed]
   product -->|Yes| qty{Quantity equals server result?}
   qty -->|No| rejectQty[409 quantity_mismatch]
-  qty -->|Yes| broker{Simulated connection present?}
-  broker -->|No| rejectBroker[409 broker_not_connected]
-  broker -->|Yes| refuse[403 trading_disabled]
-  refuse --> none[(No order_intent row<br/>No broker_order row)]
+  qty -->|Yes| broker{Zerodha session present?}
+  broker -->|No| rejectBroker[409 broker_not_connected<br/>No order_intent row]
+  broker -->|Yes| save[One proposed order_intent<br/>No broker_order row]
 ```
 
-Each rejection that passes the existence check commits an audit row. The idempotency key is recorded on that audit so a later milestone can persist it on the intent. Today a repeated tap cannot create a duplicate order because no order is created.
-
-The simulated adapter is not asked to place the order. Its `place_order` method raises if something calls it anyway.
+Each rejection that passes the existence check commits an audit row. A passing confirmation stores one proposed intent for that trader and call. The same confirmation key returns that row. Zerodha is not asked to place the order. The stop and targets on the intent are not active. The broker adapter raises if something calls place, modify, or cancel anyway.
 
 ## 5. Target order flow after M3
 
@@ -139,7 +136,7 @@ Partial fills, cancel races, and restarts are handled by reconciliation against 
 | Data | Allowed store | Forbidden store |
 | --- | --- | --- |
 | OTP and refresh token | Hash only | Logs, audit payloads, client error bodies in production |
-| Broker access token or password | A future secret store, if the broker requires persistence | `broker_connections`, `broker_accounts`, audit, logs |
-| Fyers quote app secret, PIN, access token, and refresh token | Server environment file | Tables, audit payloads, logs, and the phone after saving |
+| Broker access token or password | The server secret directory for a Zerodha access token. The Kite api secret stays in the server environment file | `broker_connections`, `broker_accounts`, audit, logs, and the phone |
+| Fyers quote app secret, PIN, client id, TOTP key, and access token | Server environment file | Tables, audit payloads, logs, and the phone after saving |
 | Client-claimed quantity | Compared, then discarded | The quantity that is treated as authorized |
 | Signal performance mixed with user fills | Separate report inputs | One blended return or win rate |

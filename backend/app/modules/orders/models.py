@@ -2,8 +2,18 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, TimestampMixin, utcnow
@@ -26,7 +36,7 @@ _INTENT_STATUSES = (
 
 
 class OrderIntent(Base, TimestampMixin):
-    """Persisted intent. This build does not insert rows; execution arrives in a later milestone."""
+    """What the trader confirmed. This build stores it and does not send it to a broker."""
 
     __tablename__ = "order_intents"
     __table_args__ = (
@@ -35,10 +45,19 @@ class OrderIntent(Base, TimestampMixin):
             name="status",
         ),
         CheckConstraint("product IN ('MIS', 'CNC')", name="product"),
+        CheckConstraint("side IN ('BUY', 'SELL')", name="side"),
+        CheckConstraint("trigger_price > 0 AND stop_loss > 0", name="prices_positive"),
         CheckConstraint("requested_quantity > 0", name="requested_quantity"),
         CheckConstraint(
             "validated_quantity IS NULL OR validated_quantity > 0",
             name="validated_quantity",
+        ),
+        Index(
+            "uq_order_intents_open_signal",
+            "user_id",
+            "signal_id",
+            unique=True,
+            postgresql_where=text("status = 'proposed'"),
         ),
     )
 
@@ -51,7 +70,11 @@ class OrderIntent(Base, TimestampMixin):
     )
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
     product: Mapped[str] = mapped_column(String(16), nullable=False)
+    trigger_price: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    stop_loss: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    targets: Mapped[list] = mapped_column(JSONB, nullable=False)
     requested_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     validated_quantity: Mapped[int | None] = mapped_column(Integer)
     rejection_reason: Mapped[str | None] = mapped_column(String(255))

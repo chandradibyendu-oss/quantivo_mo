@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.database import utcnow
 from app.core.errors import AppError
 from app.core.money import money
-from app.modules.brokers.models import BrokerConnection
-from app.modules.brokers.service import get_simulated_connection
+from app.modules.brokers.service import broker_for_trader
 from app.modules.feeds.service import scanner_feed_mode
 from app.modules.feeds.window import quote_label, session_day
 from app.modules.progress.candles import session_candles
@@ -152,23 +151,14 @@ def _bundle(db: Session, scanner_id: UUID) -> tuple[Scanner, ScannerProvider]:
     return row[0], row[1]
 
 
-def _broker_summary(connection: BrokerConnection | None) -> BrokerSummary:
-    if connection is None:
-        return BrokerSummary(
-            code="simulated",
-            status="disconnected",
-            last_authenticated_at=None,
-            message="No simulated broker session. Order placement is disabled in this build.",
-        )
-    if connection.status == "connected":
-        message = "Simulated session only. Quantivo will not send an order."
-    else:
-        message = connection.status_message or "The simulated broker is not connected."
+def _broker_summary(db: Session, user_id: UUID, now) -> BrokerSummary:
+    account, connection = broker_for_trader(db, user_id, now)
+    status = "disconnected" if account.status == "not_set" else account.status
     return BrokerSummary(
-        code=connection.broker_code,
-        status=connection.status,
-        last_authenticated_at=connection.last_authenticated_at,
-        message=message,
+        code="zerodha",
+        status=status,
+        last_authenticated_at=None if connection is None else connection.last_authenticated_at,
+        message=account.detail,
     )
 
 
@@ -186,8 +176,7 @@ def list_signals(
     elif not is_entitled(db, user_id, scanner_id):
         raise AppError(403, "entitlement_required", "Activate this scanner before reading its signals.")
 
-    connection = get_simulated_connection(db, user_id)
-    broker_status = connection.status if connection is not None else "disconnected"
+    broker_status = _broker_summary(db, user_id, utcnow()).status
     if scanner_id is None:
         return SignalListOut(
             entitled=False,
@@ -369,7 +358,7 @@ def get_signal(db: Session, *, user_id: UUID, signal_id: UUID) -> SignalDetail:
     card = apply_progress(quoted, now=utcnow())[0]
     return SignalDetail(
         **card.model_dump(),
-        broker=_broker_summary(get_simulated_connection(db, user_id)),
+        broker=_broker_summary(db, user_id, moment),
     )
 
 

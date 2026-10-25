@@ -1,6 +1,6 @@
 """Fyers quote secrets live in the server environment, not in a table.
 
-The file holds the app id, app secret, PIN, access token, and refresh token.
+The file holds the app id, app secret, PIN, client id, TOTP key, access token, and refresh token.
 None of those values are written to a log or an audit payload.
 """
 
@@ -22,6 +22,8 @@ _KEYS = (
     "FYERS_APP_ID",
     "FYERS_APP_SECRET",
     "FYERS_PIN",
+    "FYERS_CLIENT_ID",
+    "FYERS_TOTP_SECRET",
     "FYERS_ACCESS_TOKEN",
     "FYERS_REFRESH_TOKEN",
     "FYERS_ACCESS_UNTIL",
@@ -31,6 +33,8 @@ _KEYS = (
 _APP_ID = re.compile(r"^[A-Za-z0-9-]{4,64}$")
 _SECRET = re.compile(r"^[A-Za-z0-9._~+/=-]{8,256}$")
 _PIN = re.compile(r"^\d{4}$")
+_CLIENT = re.compile(r"^[A-Z0-9]{2,16}$")
+_TOTP = re.compile(r"^[A-Z2-7]{16,64}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9._~+/=-]{20,4096}$")
 _CALLBACK_PATH = "/api/v1/admin/fyers/callback"
 _LOCK = threading.Lock()
@@ -42,13 +46,16 @@ def save_fyers_app(
     pin: str,
     redirect_uri: str,
     *,
+    client_id: str = "",
+    totp_key: str = "",
     env_file: Path | None = None,
     apply: bool = True,
 ) -> None:
-    cleaned_id = app_id.strip()
-    cleaned_secret = app_secret.strip()
-    cleaned_pin = pin.strip()
-    cleaned_redirect = redirect_uri.strip()
+    path = ENV_PATH if env_file is None else env_file
+    cleaned_id = app_id.strip() or (_stored(path, "FYERS_APP_ID") or "")
+    cleaned_secret = app_secret.strip() or (_stored(path, "FYERS_APP_SECRET") or "")
+    cleaned_pin = pin.strip() or (_stored(path, "FYERS_PIN") or "")
+    cleaned_redirect = redirect_uri.strip() or (_stored(path, "FYERS_REDIRECT_URI") or "")
     if _APP_ID.fullmatch(cleaned_id) is None or _SECRET.fullmatch(cleaned_secret) is None:
         raise AppError(
             422,
@@ -63,13 +70,17 @@ def save_fyers_app(
             "invalid_fyers_config",
             "Use the Admin callback URL shown on this screen.",
         )
-    path = ENV_PATH if env_file is None else env_file
+    cleaned_client, cleaned_totp = _totp_pair(path, client_id, totp_key)
     updates: dict[str, str | None] = {
         "FYERS_APP_ID": cleaned_id,
         "FYERS_APP_SECRET": cleaned_secret,
         "FYERS_PIN": cleaned_pin,
         "FYERS_REDIRECT_URI": cleaned_redirect,
     }
+    if cleaned_client:
+        updates["FYERS_CLIENT_ID"] = cleaned_client
+    if cleaned_totp:
+        updates["FYERS_TOTP_SECRET"] = cleaned_totp
     previous_id = _stored(path, "FYERS_APP_ID")
     previous_secret = _stored(path, "FYERS_APP_SECRET")
     if previous_id not in (None, cleaned_id) or previous_secret not in (None, cleaned_secret):
@@ -158,10 +169,38 @@ def _apply(values: dict[str, str | None]) -> None:
         if value:
             os.environ[key] = value
         else:
-            os.environ.pop(key, None)
+            os.environ[key] = ""
     get_settings.cache_clear()
     clear_quote_cache()
     clear_history_cache()
+
+
+def _totp_pair(path: Path, client_id: str, totp_key: str) -> tuple[str, str]:
+    cleaned_client = client_id.strip().upper()
+    cleaned_totp = "".join(totp_key.split()).upper()
+    if cleaned_client and _CLIENT.fullmatch(cleaned_client) is None:
+        raise AppError(
+            422,
+            "invalid_fyers_config",
+            "Enter the Fyers client id used on the Fyers login page.",
+        )
+    if cleaned_totp and _TOTP.fullmatch(cleaned_totp) is None:
+        raise AppError(
+            422,
+            "invalid_fyers_config",
+            "Enter the Fyers external TOTP key. A 6-digit code is not the key.",
+        )
+    stored_client = _stored(path, "FYERS_CLIENT_ID") or ""
+    stored_totp = _stored(path, "FYERS_TOTP_SECRET") or ""
+    chosen_client = cleaned_client or stored_client
+    chosen_totp = cleaned_totp or stored_totp
+    if bool(chosen_client) != bool(chosen_totp):
+        raise AppError(
+            422,
+            "invalid_fyers_config",
+            "Enter both the Fyers client id and the TOTP key.",
+        )
+    return cleaned_client, cleaned_totp
 
 
 def _redirect_ok(value: str) -> bool:

@@ -31,11 +31,16 @@ class Settings(BaseSettings):
     fyers_app_id: str = ""
     fyers_app_secret: str = ""
     fyers_pin: str = ""
+    fyers_client_id: str = ""
+    fyers_totp_secret: str = ""
     fyers_access_token: str = ""
     fyers_refresh_token: str = ""
     fyers_access_until: str = ""
     fyers_refresh_until: str = ""
     fyers_redirect_uri: str = ""
+    kite_api_key: str = ""
+    kite_api_secret: str = ""
+    kite_redirect_uri: str = ""
 
     @field_validator("secret_key")
     @classmethod

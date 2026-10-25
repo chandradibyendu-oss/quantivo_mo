@@ -28,17 +28,18 @@ Done means the behavior is in the API or the app and covered by the Phase 1 test
 - [x] Sample feed, signal list, and signal detail. The sample does not call Telegram
 - [x] Each call stores segment, source channel, and the horizon words as published
 - [x] Quantity from maximum loss. Capital and risk-reward do not change the share count
-- [x] Simulated broker connection, then a refused order. No order row is written
+- [x] Zerodha sign-in, then one saved intent for a call. No broker order is written. The call shows that Zerodha session
+- [x] A trader signs in on Zerodha from Account. The Kite app key and secret are saved once on Admin. The access token stays in the server secret directory until 6:00 AM IST. This build does not send an order
 - [x] Automated tests for that path
 - [x] Start, stop, and restart scripts. A busy port is left alone
-- [ ] Confirm on the phone: open one call, connect the simulated broker, and see the refusal. The screens and the API tests are in place
+- [ ] Confirm on the phone: open one call, tap Buy, and save the intent. The screens and the API tests are in place
 
 ### Phase 2 — Scanner experience
 
 - [ ] Editable risk profile at first login and on Account, saved in `risk_profiles`
 - [x] Home row: All, then each source channel. All is the registered calls together. No horizon tab row
 - [x] Actionable and All are one short bar. The closed-call count sits in the All side
-- [x] A hamburger at the top left opens Home, Scanners, Account, and Admin for an operator. A call shows a back arrow there
+- [x] A hamburger at the top left opens Home, Scanners, Orders, Account, and Admin for an operator. Orders lists that trader's saved intents. A call shows a back arrow there
 - [x] An operator adds a scanner, then adds channels under that scanner. Home opens the scanner that was chosen
 - [x] Home switches held scanners in one tap. The channel row is the open scanner's channels
 - [x] Each call's mark is generated from the name match, the expiry clock, the horizon clocks, the entry window, and Fyers one-minute bars for an NSE cash call. Same-day Intraday and BTST go stale at 30 minutes. Short term and long term go stale at 30 days until an admin changes those clocks. Intraday to 7 days expires 7 days after the post. The chip shows Entry, Caution, Not valid, a trail, Final, or Stop with the minute that produced it. A stored status word is not shown. Without the Fyers app the clock mark stays and no time is invented
@@ -49,7 +50,7 @@ Done means the behavior is in the API or the app and covered by the Phase 1 test
 
 ### Phase 3 — Simulated trading
 
-- [ ] One stored intent before any broker call. A repeated tap does not create a second intent
+- [x] One stored intent before any broker call. A repeated tap does not create a second intent. The ticket is filled from the call, and prices can be edited. Zerodha is not called. Orders lists those saved intents and their status
 - [ ] Simulated fill and protection. A stop or target is active only after the broker says so
 - [ ] Positions show what the simulated broker reported
 
@@ -60,7 +61,7 @@ Done means the behavior is in the API or the app and covered by the Phase 1 test
 - [x] Operator API to read and update those settings. A trader receives 403. The change is audited
 - [x] `python -m app.feeds.worker` reads the channel history once, then checks for new posts about every 5 seconds on a weekday from 09:15 to 15:30 IST, and about once a minute outside that window. Home reads those stored calls again every 5 seconds while it is open. A last traded price is reused for up to a minute. Sample calls leave the list when the feed kind is Telegram. The worker starts with this project's services only after this machine has its own login
 - [ ] HTTP reader. The settings can be saved. Nothing calls that URL yet
-- [x] Admin configuration on the signed-in phone, shown when the account has the admin role. It saves each channel's feed and shows the shared worker login as present or missing. It saves a Fyers app id, app secret, and PIN once, then the admin signs in on Fyers. The server refreshes the access token each morning for 15 days. Those secrets are not stored in a table and are not shown again. A Telegram channel name is resolved to the id of a joined chat. Stopping a feed and deleting a channel each ask first. Delete removes the channel and its stored calls, and refuses when an order record points at one of those calls. The broader Next.js portal is still later
+- [x] Admin configuration on the signed-in phone, shown when the account has the admin role. It saves each channel's feed and shows the shared worker login as present or missing. It saves a Fyers app id, app secret, PIN, client id, and TOTP key once. The server signs in after 6:30 AM IST. A browser sign-in remains when the TOTP key is not saved. Those secrets are not stored in a table and are not shown again. A Telegram channel name is resolved to the id of a joined chat. Stopping a feed and deleting a channel each ask first. Delete removes the channel and its stored calls, and refuses when an order record points at one of those calls. The broader Next.js portal is still later
 - [ ] F&O and commodity parsers. Those channels cannot use `equity_calls`
 
 ### Phase 4 — Administration
@@ -103,7 +104,7 @@ The current phase. A developer can run the API locally and walk the signal path.
 - One Mani's sample feed, a signal list, and signal detail. The sample does not call Telegram.
 - Each signal stores its segment, source channel, and the horizon words as published. The sample uses one channel. Do not copy the Equity parser's global "intraday" rule into the platform.
 - Quantity from maximum loss. Capital and risk-reward do not change the share count.
-- A simulated broker connection, then a refused order. No order row is written. Live trading stays off.
+- A Zerodha sign-in, then one saved intent. No broker order is written. Live trading stays off.
 - Automated tests for that path, and the Expo screens needed to sign in, list signals, and open one.
 
 ### Phase 2 — Scanner experience

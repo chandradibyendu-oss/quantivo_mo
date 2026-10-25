@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,7 @@ from app.modules.quotes.credentials import (
     save_fyers_session,
 )
 from app.modules.quotes.session import access_valid_until, ensure_access_token
+from app.modules.quotes.totp import totp_code
 from sqlalchemy import select
 from tests.helpers import bearer, sign_in
 
@@ -27,6 +28,8 @@ _ENV_KEYS = (
     "FYERS_APP_ID",
     "FYERS_APP_SECRET",
     "FYERS_PIN",
+    "FYERS_CLIENT_ID",
+    "FYERS_TOTP_SECRET",
     "FYERS_ACCESS_TOKEN",
     "FYERS_REFRESH_TOKEN",
     "FYERS_ACCESS_UNTIL",
@@ -87,6 +90,8 @@ def test_a_morning_token_is_minted_without_another_sign_in(tmp_path, monkeypatch
         "FYERS_APP_ID": _APP_ID,
         "FYERS_APP_SECRET": _SECRET,
         "FYERS_PIN": _PIN,
+        "FYERS_CLIENT_ID": "",
+        "FYERS_TOTP_SECRET": "",
         "FYERS_REDIRECT_URI": _REDIRECT,
         "FYERS_ACCESS_TOKEN": "oldAccessTokenValue123456",
         "FYERS_REFRESH_TOKEN": _REFRESH,
@@ -129,6 +134,8 @@ def test_a_sign_in_older_than_15_days_is_not_refreshed(tmp_path, monkeypatch):
         "FYERS_APP_ID": _APP_ID,
         "FYERS_APP_SECRET": _SECRET,
         "FYERS_PIN": _PIN,
+        "FYERS_CLIENT_ID": "",
+        "FYERS_TOTP_SECRET": "",
         "FYERS_REDIRECT_URI": _REDIRECT,
         "FYERS_ACCESS_TOKEN": _ACCESS,
         "FYERS_REFRESH_TOKEN": _REFRESH,
@@ -144,8 +151,8 @@ def test_a_sign_in_older_than_15_days_is_not_refreshed(tmp_path, monkeypatch):
     try:
         minted = ensure_access_token(post=post, now=datetime(2026, 10, 24, 10, 0, tzinfo=IST))
         assert minted is False
-        assert get_settings().fyers_access_token == ""
-        assert get_settings().fyers_refresh_token == _REFRESH
+        assert os.environ.get("FYERS_ACCESS_TOKEN") == ""
+        assert os.environ.get("FYERS_REFRESH_TOKEN") == _REFRESH
         assert _ACCESS not in env_file.read_text(encoding="utf-8")
     finally:
         _restore(previous)
@@ -179,6 +186,16 @@ def test_an_admin_signs_in_once_and_the_secrets_stay_on_the_server(
         lambda: datetime(2026, 10, 24, 10, 0, tzinfo=IST),
     )
     previous = {key: os.environ.get(key) for key in _ENV_KEYS}
+    for key in (
+        "FYERS_ACCESS_TOKEN",
+        "FYERS_REFRESH_TOKEN",
+        "FYERS_ACCESS_UNTIL",
+        "FYERS_REFRESH_UNTIL",
+        "FYERS_CLIENT_ID",
+        "FYERS_TOTP_SECRET",
+    ):
+        os.environ[key] = ""
+    get_settings.cache_clear()
     session = sign_in(client, "9988776644")
     grant_admin_role(db, "9988776644")
     db.commit()
@@ -204,9 +221,34 @@ def test_an_admin_signs_in_once_and_the_secrets_stay_on_the_server(
         assert body["app_saved"] is True
         assert body["connected"] is False
         assert body["configured"] is False
+        assert body["app_id"] == _APP_ID
+        assert body["client_id"] == ""
+        assert body["totp_saved"] is False
         assert _SECRET not in saved.text
         assert _PIN not in saved.text
-        assert _APP_ID not in saved.text
+
+        kept = client.put(
+            "/api/v1/admin/fyers",
+            headers=headers,
+            json={
+                "app_id": "",
+                "app_secret": "",
+                "pin": "",
+                "redirect_uri": _REDIRECT,
+                "client_id": "XA1234",
+                "totp_key": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+            },
+        )
+        assert kept.status_code == 200, kept.text
+        assert kept.json()["app_id"] == _APP_ID
+        assert kept.json()["client_id"] == "XA1234"
+        assert kept.json()["totp_saved"] is True
+        assert _SECRET not in kept.text
+        assert "pin" not in kept.json()
+        assert "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" not in kept.text
+        kept_file = env_file.read_text(encoding="utf-8")
+        assert _SECRET in kept_file
+        assert _PIN in kept_file
 
         rejected = client.put(
             "/api/v1/admin/fyers",
@@ -246,7 +288,7 @@ def test_an_admin_signs_in_once_and_the_secrets_stay_on_the_server(
         assert seen.status_code == 200
         assert seen.json()["connected"] is True
         assert seen.json()["refresh_until"] == "2026-11-08"
-        assert "Connected until 8 Nov 2026" in seen.json()["detail"]
+        assert "Connected until 6:30 AM IST on 25 Oct 2026" in seen.json()["detail"]
         assert _ACCESS not in seen.text
         assert _SECRET not in seen.text
 
@@ -273,6 +315,89 @@ def test_an_admin_signs_in_once_and_the_secrets_stay_on_the_server(
         assert _REFRESH not in cleared
         assert _SECRET not in cleared
         assert _PIN not in cleared
+    finally:
+        _restore(previous)
+
+
+def test_a_totp_code_matches_the_standard_vector():
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    moment = datetime.fromtimestamp(40, tz=UTC)
+    assert totp_code(secret, moment) == "287082"
+
+
+def test_a_saved_totp_key_mints_the_morning_token(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("LOG_LEVEL=INFO\n")
+    monkeypatch.setattr("app.modules.quotes.credentials.ENV_PATH", env_file)
+    monkeypatch.setattr("app.modules.quotes.session._failed_at", None)
+    monkeypatch.setattr("app.modules.quotes.session._totp_failed_at", None)
+    previous = {key: os.environ.get(key) for key in _ENV_KEYS}
+    issued = datetime(2026, 10, 25, 10, 0, tzinfo=IST)
+    for key, value in {
+        "FYERS_APP_ID": _APP_ID,
+        "FYERS_APP_SECRET": _SECRET,
+        "FYERS_PIN": _PIN,
+        "FYERS_CLIENT_ID": "XA1234",
+        "FYERS_TOTP_SECRET": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        "FYERS_REDIRECT_URI": _REDIRECT,
+        "FYERS_ACCESS_TOKEN": "oldAccessTokenValue123456",
+        "FYERS_ACCESS_UNTIL": datetime(2026, 10, 25, 6, 30, tzinfo=IST).isoformat(),
+    }.items():
+        os.environ[key] = value
+    get_settings.cache_clear()
+    calls = {"n": 0}
+
+    def login(settings, *, now):
+        calls["n"] += 1
+        assert settings.fyers_client_id == "XA1234"
+        assert now == issued
+        return "totpAccessTokenValue123456"
+
+    try:
+        assert ensure_access_token(login=login, now=issued) is True
+        assert calls["n"] == 1
+        assert get_settings().fyers_access_token == "totpAccessTokenValue123456"
+        later = datetime(2026, 10, 25, 11, 0, tzinfo=IST)
+        assert ensure_access_token(login=login, now=later) is True
+        assert calls["n"] == 1
+        stored = env_file.read_text(encoding="utf-8")
+        assert "totpAccessTokenValue123456" in stored
+        assert "XA1234" not in stored
+        assert "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" not in stored
+    finally:
+        _restore(previous)
+
+
+def test_a_failed_totp_sign_in_waits_before_trying_again(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("LOG_LEVEL=INFO\n")
+    monkeypatch.setattr("app.modules.quotes.credentials.ENV_PATH", env_file)
+    monkeypatch.setattr("app.modules.quotes.session._totp_failed_at", None)
+    previous = {key: os.environ.get(key) for key in _ENV_KEYS}
+    issued = datetime(2026, 10, 25, 10, 0, tzinfo=IST)
+    for key, value in {
+        "FYERS_APP_ID": _APP_ID,
+        "FYERS_APP_SECRET": _SECRET,
+        "FYERS_PIN": _PIN,
+        "FYERS_CLIENT_ID": "XA1234",
+        "FYERS_TOTP_SECRET": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        "FYERS_REDIRECT_URI": _REDIRECT,
+        "FYERS_ACCESS_TOKEN": "",
+        "FYERS_ACCESS_UNTIL": "",
+    }.items():
+        os.environ[key] = value
+    get_settings.cache_clear()
+    calls = {"n": 0}
+
+    def login(settings, *, now):
+        del settings, now
+        calls["n"] += 1
+        return None
+
+    try:
+        assert ensure_access_token(login=login, now=issued) is False
+        assert ensure_access_token(login=login, now=issued) is False
+        assert calls["n"] == 1
     finally:
         _restore(previous)
 

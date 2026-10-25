@@ -10,12 +10,12 @@ import { AppShell } from "@/shell";
 import type { SignalDetail } from "@/types";
 import { colors, ui } from "@/ui";
 
+import { OrderTicket } from "./ticket";
+
 export default function SignalDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [signal, setSignal] = useState<SignalDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -35,45 +35,6 @@ export default function SignalDetailScreen() {
       cancelled = true;
     };
   }, [load]);
-
-  async function connectBroker() {
-    setBusy(true);
-    setNotice(null);
-    setError(null);
-    try {
-      await api("/api/v1/broker/connections/simulated", { method: "POST" });
-      await load();
-    } catch (caught) {
-      setError(caught instanceof ApiRequestError ? caught.message : "The broker session was not recorded.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function prepareOrder() {
-    if (!signal || signal.suggested_quantity == null) {
-      return;
-    }
-    setBusy(true);
-    setNotice(null);
-    setError(null);
-    try {
-      await api("/api/v1/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          signal_id: signal.id,
-          idempotency_key: `confirm-${Date.now()}`,
-          product: signal.product_hint,
-          quantity: signal.suggested_quantity,
-        }),
-      });
-    } catch (caught) {
-      const message = caught instanceof ApiRequestError ? caught.message : "The order was not accepted.";
-      setNotice(message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <AppShell title={signal?.symbol ?? "Call"} onBack={() => router.replace("/signals")}>
@@ -144,6 +105,7 @@ export default function SignalDetailScreen() {
               <Text style={ui.rowTitle}>
                 {signal.quantivo_values.suggested_quantity ?? "None"}
               </Text>
+              <OrderTicket signal={signal} />
               <Text style={ui.meta}>{signal.quantivo_values.formula}</Text>
               <Text style={ui.meta}>Maximum loss ₹{signal.quantivo_values.max_risk_inr}</Text>
               {signal.quantivo_values.unavailable_reason ? (
@@ -157,20 +119,11 @@ export default function SignalDetailScreen() {
               <Text style={ui.rowTitle}>{signal.broker.status}</Text>
               <Text style={ui.meta}>{signal.broker.message}</Text>
               {signal.broker.status !== "connected" ? (
-                <Pressable style={[ui.primary, { marginTop: 14 }]} disabled={busy} onPress={connectBroker}>
-                  <Text style={ui.primaryText}>Connect simulated broker</Text>
+                <Pressable style={[ui.primary, { marginTop: 14 }]} onPress={() => router.push("/account")}>
+                  <Text style={ui.primaryText}>Sign in on Zerodha</Text>
                 </Pressable>
               ) : null}
             </View>
-
-            {notice ? <Text style={ui.error}>{notice}</Text> : null}
-            <Pressable
-              style={ui.primary}
-              disabled={busy || !signal.executable || signal.suggested_quantity == null}
-              onPress={prepareOrder}
-            >
-              <Text style={ui.primaryText}>{busy ? "Checking…" : "Prepare order"}</Text>
-            </Pressable>
           </>
         ) : null}
       </ScrollView>

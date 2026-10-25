@@ -1,61 +1,85 @@
+import re
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import utcnow
 from app.core.deps import Principal
 from app.core.errors import AppError
-from app.modules.audit.service import commit_and_raise
-from app.modules.brokers.service import get_simulated_connection
+from app.core.money import money
+from app.modules.audit.service import commit_and_raise, record
+from app.modules.brokers.service import broker_for_trader
+from app.modules.orders.models import OrderIntent
+from app.modules.orders.schemas import OrderBookOut, OrderIntentOut, OrderPreviewOut
 from app.modules.progress.marks import terminal_mark
-from app.modules.risk.calculator import RiskInputs, calculate
+from app.modules.risk.calculator import RiskInputs, RiskResult, calculate
 from app.modules.risk.service import get_profile
 from app.modules.signals.clocks import load_clocks
 from app.modules.signals.models import Signal
-from app.modules.signals.schemas import OrderRequest
+from app.modules.signals.schemas import OrderPreviewIn, OrderRequest, TargetOut
 from app.modules.signals.status import derived_status, is_executable
 from app.modules.subscriptions.service import is_entitled
 
+_PRICE = re.compile(r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+SAVED = (
+    "Saved. Zerodha was not sent this order. "
+    "The stop and targets stay inactive until Zerodha confirms them."
+)
 
-def refuse_order(db: Session, principal: Principal, body: OrderRequest, *, correlation_id: str | None) -> None:
-    """Validate the request, audit the refusal, and do not persist an order."""
 
-    signal = db.get(Signal, body.signal_id)
-    if signal is None or not is_entitled(db, principal.user.id, signal.scanner_id):
-        raise AppError(404, "signal_not_found", "That signal is not available.")
+@dataclass(frozen=True)
+class _Ticket:
+    side: str
+    trigger: Decimal
+    stop: Decimal
+    targets: list[dict[str, str]]
+    quantity: int
+    result: RiskResult
 
-    base = {
-        "signal_id": str(signal.id),
-        "product": body.product,
-        "requested_quantity": body.quantity,
-        "idempotency_key": body.idempotency_key,
-    }
-    moment = utcnow()
-    status = derived_status(signal, moment, load_clocks(db))
-    if not is_executable(status):
-        commit_and_raise(
-            db,
-            AppError(409, "signal_not_actionable", "This signal is not executable."),
-            action="order.rejected_validation",
-            entity_type="signal",
-            entity_id=signal.id,
-            payload={**base, "reason": status},
-            actor_user_id=principal.user.id,
-            correlation_id=correlation_id,
-        )
-    finished = _finished_mark(signal, moment)
-    if finished is not None:
-        commit_and_raise(
-            db,
-            AppError(409, "signal_not_actionable", "This signal is not executable."),
-            action="order.rejected_validation",
-            entity_type="signal",
-            entity_id=signal.id,
-            payload={**base, "reason": finished},
-            actor_user_id=principal.user.id,
-            correlation_id=correlation_id,
-        )
 
+def preview_order(db: Session, principal: Principal, body: OrderPreviewIn) -> OrderPreviewOut:
+    """Recalculate quantity for the ticket. Nothing is stored."""
+
+    signal = _signal(db, principal, body.signal_id)
+    _executable(
+        db,
+        principal,
+        signal,
+        _audit_base(signal, body.product, 0, "preview"),
+        correlation_id=None,
+    )
+    profile = get_profile(db, principal.user.id)
+    if body.product not in profile.allowed_products:
+        raise AppError(422, "product_not_allowed", "Your risk profile does not allow this product.")
+    side, trigger, stop, targets = _prices(signal, body)
+    result = _risk(signal, profile, side, trigger, stop)
+    return OrderPreviewOut(
+        ok=result.ok,
+        quantity=result.quantity if result.ok else None,
+        reason=result.reason,
+        side=side,  # type: ignore[arg-type]
+        product=body.product,
+        trigger_price=money(trigger) or "0.00",
+        stop_loss=money(stop) or "0.00",
+        targets=[TargetOut(label=item["label"], price=item["price"]) for item in targets],
+    )
+
+
+def confirm_order(
+    db: Session,
+    principal: Principal,
+    body: OrderRequest,
+    *,
+    correlation_id: str | None,
+) -> OrderIntentOut:
+    """Store one proposed intent for this call. Do not call the broker."""
+
+    signal = _signal(db, principal, body.signal_id)
+    base = _audit_base(signal, body.product, body.quantity, body.idempotency_key)
+    _executable(db, principal, signal, base, correlation_id=correlation_id)
     profile = get_profile(db, principal.user.id)
     if body.product not in profile.allowed_products:
         commit_and_raise(
@@ -68,26 +92,16 @@ def refuse_order(db: Session, principal: Principal, body: OrderRequest, *, corre
             actor_user_id=principal.user.id,
             correlation_id=correlation_id,
         )
-
-    result = calculate(
-        RiskInputs(
-            side=signal.side,
-            trigger_price=Decimal(signal.trigger_price),
-            stop_loss=Decimal(signal.stop_loss),
-            lot_size=signal.lot_size,
-            max_risk_inr=Decimal(profile.max_risk_inr),
-            max_quantity=profile.max_quantity,
-            max_exposure_inr=None if profile.max_exposure_inr is None else Decimal(profile.max_exposure_inr),
-            capital_allocation_inr=Decimal(profile.capital_allocation_inr),
-        )
-    )
+    side, trigger, stop, targets = _prices(signal, body)
+    result = _risk(signal, profile, side, trigger, stop)
     if not result.ok or result.quantity != body.quantity:
         commit_and_raise(
             db,
             AppError(
                 409,
                 "quantity_mismatch",
-                "Quantity does not match the current server-side calculation. Refresh the signal and try again.",
+                "Quantity does not match the current server-side calculation. "
+                "Refresh the signal and try again.",
             ),
             action="order.rejected_validation",
             entity_type="signal",
@@ -96,12 +110,15 @@ def refuse_order(db: Session, principal: Principal, body: OrderRequest, *, corre
             actor_user_id=principal.user.id,
             correlation_id=correlation_id,
         )
-
-    connection = get_simulated_connection(db, principal.user.id)
-    if connection is None or connection.status != "connected":
+    account, _connection = broker_for_trader(db, principal.user.id, utcnow())
+    if account.status != "connected":
         commit_and_raise(
             db,
-            AppError(409, "broker_not_connected", "Connect a broker before preparing an order. No order was created."),
+            AppError(
+                409,
+                "broker_not_connected",
+                "Sign in on Zerodha before preparing an order. No order was created.",
+            ),
             action="order.rejected_validation",
             entity_type="signal",
             entity_id=signal.id,
@@ -110,19 +127,244 @@ def refuse_order(db: Session, principal: Principal, body: OrderRequest, *, corre
             correlation_id=correlation_id,
         )
 
-    commit_and_raise(
+    ticket = _Ticket(side, trigger, stop, targets, result.quantity or body.quantity, result)
+    found = _by_key(db, body.idempotency_key)
+    if found is not None:
+        if found.user_id != principal.user.id or not _same(found, ticket, body.product):
+            raise AppError(
+                409,
+                "idempotency_conflict",
+                "This confirmation was already saved with different prices.",
+            )
+        return _out(found)
+    open_intent = _open_for_call(db, principal.user.id, signal.id)
+    if open_intent is not None and _same(open_intent, ticket, body.product):
+        return _out(open_intent)
+    intent = open_intent or OrderIntent(
+        user_id=principal.user.id,
+        signal_id=signal.id,
+        idempotency_key=body.idempotency_key,
+        status="proposed",
+        side=ticket.side,
+        product=body.product,
+        trigger_price=ticket.trigger,
+        stop_loss=ticket.stop,
+        targets=ticket.targets,
+        requested_quantity=ticket.quantity,
+        validated_quantity=ticket.quantity,
+    )
+    _apply(intent, ticket, body)
+    if open_intent is None:
+        db.add(intent)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        found = _by_key(db, body.idempotency_key) or _open_for_call(
+            db, principal.user.id, signal.id
+        )
+        if found is not None and _same(found, ticket, body.product):
+            return _out(found)
+        raise AppError(
+            409,
+            "idempotency_conflict",
+            "This confirmation was already saved with different prices.",
+        ) from None
+    record(
         db,
-        AppError(
-            403,
-            "trading_disabled",
-            "Order placement is disabled. The simulated broker can record a connection, but it does not accept, fill, or protect orders.",
-        ),
-        action="order.refused",
-        entity_type="signal",
-        entity_id=signal.id,
-        payload={**base, "reason": "trading_disabled"},
+        action="order.confirmed",
+        entity_type="order_intent",
+        entity_id=intent.id,
+        payload={**base, "side": ticket.side, "status": "proposed"},
         actor_user_id=principal.user.id,
         correlation_id=correlation_id,
+    )
+    return _out(intent)
+
+
+def list_orders(db: Session, principal: Principal) -> list[OrderBookOut]:
+    """Saved orders for this trader. Nothing is sent to a broker."""
+
+    rows = db.execute(
+        select(OrderIntent, Signal)
+        .join(Signal, Signal.id == OrderIntent.signal_id)
+        .where(OrderIntent.user_id == principal.user.id)
+        .order_by(OrderIntent.created_at.desc(), OrderIntent.id.desc())
+    ).all()
+    return [_book(intent, signal) for intent, signal in rows]
+
+
+def open_order(db: Session, principal: Principal, signal_id) -> OrderIntentOut:
+    _signal(db, principal, signal_id)
+    found = _open_for_call(db, principal.user.id, signal_id)
+    if found is None:
+        raise AppError(404, "order_not_found", "This call has no saved order.")
+    return _out(found)
+
+
+def _signal(db: Session, principal: Principal, signal_id) -> Signal:
+    signal = db.get(Signal, signal_id)
+    if signal is None or not is_entitled(db, principal.user.id, signal.scanner_id):
+        raise AppError(404, "signal_not_found", "That signal is not available.")
+    return signal
+
+
+def _executable(
+    db: Session,
+    principal: Principal,
+    signal: Signal,
+    base: dict,
+    *,
+    correlation_id: str | None,
+) -> None:
+    moment = utcnow()
+    status = derived_status(signal, moment, load_clocks(db))
+    blocked = not is_executable(status) or _finished_mark(signal, moment) is not None
+    if not blocked:
+        return
+    reason = status if not is_executable(status) else _finished_mark(signal, moment)
+    commit_and_raise(
+        db,
+        AppError(409, "signal_not_actionable", "This signal is not executable."),
+        action="order.rejected_validation",
+        entity_type="signal",
+        entity_id=signal.id,
+        payload={**base, "reason": reason},
+        actor_user_id=principal.user.id,
+        correlation_id=correlation_id,
+    )
+
+
+def _prices(signal: Signal, body: OrderPreviewIn | OrderRequest):
+    side = getattr(body, "side", None) or signal.side
+    if getattr(body, "trigger_price", None) is None:
+        trigger = Decimal(signal.trigger_price)
+        stop = Decimal(signal.stop_loss)
+    else:
+        trigger = _price(body.trigger_price)
+        stop = _price(body.stop_loss)
+    if getattr(body, "targets", None) is None:
+        targets = [_stored_target(item) for item in signal.targets]
+    else:
+        targets = [
+            _stored_target({"label": item.label, "price": item.price}) for item in body.targets
+        ]
+    if not targets:
+        raise AppError(422, "invalid_price", "Enter at least one target.")
+    return side, trigger, stop, targets
+
+
+def _risk(signal: Signal, profile, side: str, trigger: Decimal, stop: Decimal) -> RiskResult:
+    return calculate(
+        RiskInputs(
+            side=side,
+            trigger_price=trigger,
+            stop_loss=stop,
+            lot_size=signal.lot_size,
+            max_risk_inr=Decimal(profile.max_risk_inr),
+            max_quantity=profile.max_quantity,
+            max_exposure_inr=(
+                None if profile.max_exposure_inr is None else Decimal(profile.max_exposure_inr)
+            ),
+            capital_allocation_inr=Decimal(profile.capital_allocation_inr),
+        )
+    )
+
+
+def _price(value: str | None) -> Decimal:
+    if value is None or _PRICE.fullmatch(value) is None:
+        raise AppError(422, "invalid_price", "Enter a price greater than zero.")
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as error:
+        raise AppError(422, "invalid_price", "Enter a price greater than zero.") from error
+    if parsed <= 0:
+        raise AppError(422, "invalid_price", "Enter a price greater than zero.")
+    return parsed
+
+
+def _stored_target(item: dict) -> dict[str, str]:
+    label = str(item["label"]).strip()
+    return {"label": label, "price": money(_price(str(item["price"]))) or "0.00"}
+
+
+def _audit_base(signal: Signal, product: str, quantity: int, key: str) -> dict:
+    return {
+        "signal_id": str(signal.id),
+        "product": product,
+        "requested_quantity": quantity,
+        "idempotency_key": key,
+    }
+
+
+def _by_key(db: Session, key: str) -> OrderIntent | None:
+    return db.scalar(select(OrderIntent).where(OrderIntent.idempotency_key == key))
+
+
+def _open_for_call(db: Session, user_id, signal_id) -> OrderIntent | None:
+    return db.scalar(
+        select(OrderIntent).where(
+            OrderIntent.user_id == user_id,
+            OrderIntent.signal_id == signal_id,
+            OrderIntent.status == "proposed",
+        )
+    )
+
+
+def _same(intent: OrderIntent, ticket: _Ticket, product: str) -> bool:
+    return (
+        intent.side == ticket.side
+        and intent.product == product
+        and intent.requested_quantity == ticket.quantity
+        and money(intent.trigger_price) == (money(ticket.trigger) or "0.00")
+        and money(intent.stop_loss) == (money(ticket.stop) or "0.00")
+        and list(intent.targets) == ticket.targets
+    )
+
+
+def _apply(intent: OrderIntent, ticket: _Ticket, body: OrderRequest) -> None:
+    intent.idempotency_key = body.idempotency_key
+    intent.status = "proposed"
+    intent.side = ticket.side
+    intent.product = body.product
+    intent.trigger_price = ticket.trigger
+    intent.stop_loss = ticket.stop
+    intent.targets = ticket.targets
+    intent.requested_quantity = ticket.quantity
+    intent.validated_quantity = ticket.quantity
+    intent.rejection_reason = None
+
+
+def _book(intent: OrderIntent, signal: Signal) -> OrderBookOut:
+    return OrderBookOut(
+        id=intent.id,
+        signal_id=intent.signal_id,
+        symbol=signal.symbol,
+        exchange=signal.exchange,
+        status=intent.status,
+        side=intent.side,  # type: ignore[arg-type]
+        product=intent.product,  # type: ignore[arg-type]
+        quantity=intent.validated_quantity or intent.requested_quantity,
+        trigger_price=money(intent.trigger_price) or "0.00",
+        stop_loss=money(intent.stop_loss) or "0.00",
+        targets=[TargetOut(label=item["label"], price=item["price"]) for item in intent.targets],
+        saved_at=intent.created_at,
+        message=SAVED,
+    )
+
+
+def _out(intent: OrderIntent) -> OrderIntentOut:
+    return OrderIntentOut(
+        id=intent.id,
+        signal_id=intent.signal_id,
+        status="proposed",
+        side=intent.side,  # type: ignore[arg-type]
+        product=intent.product,  # type: ignore[arg-type]
+        quantity=intent.validated_quantity or intent.requested_quantity,
+        trigger_price=money(intent.trigger_price) or "0.00",
+        stop_loss=money(intent.stop_loss) or "0.00",
+        targets=[TargetOut(label=item["label"], price=item["price"]) for item in intent.targets],
+        message=SAVED,
     )
 
 

@@ -123,6 +123,50 @@ export type SignalDetail = SignalCard & {
   };
 };
 
+export type OrderPreview = {
+  ok: boolean;
+  quantity: number | null;
+  reason: string | null;
+  side: "BUY" | "SELL";
+  product: "MIS" | "CNC";
+  trigger_price: string;
+  stop_loss: string;
+  targets: TargetOut[];
+};
+
+export type OrderBookRow = {
+  id: string;
+  signal_id: string;
+  symbol: string;
+  exchange: string;
+  status: string;
+  side: "BUY" | "SELL";
+  product: "MIS" | "CNC";
+  quantity: number;
+  trigger_price: string;
+  stop_loss: string;
+  targets: TargetOut[];
+  sent_to_broker: false;
+  protection: "not_active";
+  saved_at: string;
+  message: string;
+};
+
+export type OrderIntent = {
+  id: string;
+  signal_id: string;
+  status: "proposed";
+  side: "BUY" | "SELL";
+  product: "MIS" | "CNC";
+  quantity: number;
+  trigger_price: string;
+  stop_loss: string;
+  targets: TargetOut[];
+  sent_to_broker: false;
+  protection: "not_active";
+  message: string;
+};
+
 export type MeOut = {
   id: string;
   phone_e164: string;
@@ -159,11 +203,30 @@ export type FyersConfigOut = {
   configured: boolean;
   app_saved: boolean;
   connected: boolean;
+  app_id: string;
+  client_id: string;
+  totp_saved?: boolean;
   refresh_until: string | null;
   detail: string;
 };
 
 export type FyersConnectOut = {
+  url: string;
+};
+
+export type KiteAppOut = {
+  app_saved: boolean;
+  detail: string;
+};
+
+export type KiteAccountOut = {
+  app_saved: boolean;
+  status: "not_set" | "disconnected" | "connected" | "expired";
+  client_id: string | null;
+  detail: string;
+};
+
+export type KiteConnectOut = {
   url: string;
 };
 

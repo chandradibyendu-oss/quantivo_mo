@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description=(
             "Trading assistant API. This build uses development OTP sign-in, Mani's sample "
-            "scanner, and a simulated broker that cannot place orders."
+            "scanner, and a Zerodha sign-in that cannot place orders."
         ),
     )
     app.add_middleware(RequestContextMiddleware)

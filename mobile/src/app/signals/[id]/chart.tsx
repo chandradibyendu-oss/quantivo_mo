@@ -53,8 +53,6 @@ export default function SignalChartScreen() {
   const [chart, setChart] = useState<SignalChart | null>(null);
   const [signal, setSignal] = useState<SignalDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [scrollable, setScrollable] = useState(true);
 
   const load = useCallback(async () => {
@@ -81,29 +79,6 @@ export default function SignalChartScreen() {
       cancelled = true;
     };
   }, [load]);
-
-  async function prepareOrder() {
-    if (!signal || signal.suggested_quantity == null) {
-      return;
-    }
-    setBusy(true);
-    setNotice(null);
-    try {
-      await api("/api/v1/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          signal_id: signal.id,
-          idempotency_key: `confirm-${Date.now()}`,
-          product: signal.product_hint,
-          quantity: signal.suggested_quantity,
-        }),
-      });
-    } catch (caught) {
-      setNotice(caught instanceof ApiRequestError ? caught.message : "The order was not accepted.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const traded = chart?.quote_state === "ready" && chart.last_price ? chart.last_price : "—";
   const tone = quoteTone(chart?.quote_state === "ready" ? chart.change_percent : null);
@@ -147,14 +122,12 @@ export default function SignalChartScreen() {
         </View>
         {chart ? <CandleChart chart={chart} onGesture={(active) => setScrollable(!active)} /> : null}
         <View style={{ paddingRight: 16 }}>
-        {notice ? <Text style={ui.error}>{notice}</Text> : null}
-        {signal ? (
+        {signal?.executable && signal.suggested_quantity != null ? (
           <Pressable
             style={[ui.primary, { marginTop: 16 }]}
-            disabled={busy || !signal.executable || signal.suggested_quantity == null}
-            onPress={prepareOrder}
+            onPress={() => router.push(`/signals/${id}`)}
           >
-            <Text style={ui.primaryText}>{busy ? "Checking…" : "Prepare order"}</Text>
+            <Text style={ui.primaryText}>Review order</Text>
           </Pressable>
         ) : null}
         </View>

@@ -1,13 +1,20 @@
+import os
+from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-
+from app.core.config import get_settings
+from app.modules.brokers.kite import session_end
+from app.modules.brokers.kite_store import save_access_token
+from app.modules.brokers.service import record_zerodha
+from app.modules.identity.models import User
 from app.modules.orders.models import BrokerOrder, OrderIntent
 from app.modules.scanners.mock_mani import SCANNER_CODE
 from app.modules.scanners.models import Scanner
 from app.modules.subscriptions.models import PaymentTransaction, ScannerSubscription
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from tests.helpers import bearer, sign_in
 
 
@@ -30,7 +37,7 @@ def _prepare(client, phone="9876543210"):
     return headers, scanner, activated.json(), synced.json()
 
 
-def test_vertical_slice_shows_quantities_and_refuses_orders(client, db):
+def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path, monkeypatch):
     headers, _scanner, _activation, synced = _prepare(client)
     assert synced["created"] == 5
 
@@ -89,23 +96,121 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db):
     assert not_connected.status_code == 409
     assert not_connected.json()["error"]["code"] == "broker_not_connected"
 
-    connected = client.post("/api/v1/broker/connections/simulated", headers=headers)
-    assert connected.status_code == 200, connected.text
-    assert connected.json()["stores_credentials"] is False
-    assert connected.json()["status"] == "connected"
+    monkeypatch.setattr("app.modules.brokers.kite_store.SECRET_ROOT", tmp_path)
+    os.environ["KITE_API_KEY"] = "kiteapi01"
+    os.environ["KITE_API_SECRET"] = "kitesecret01"
+    get_settings.cache_clear()
+    try:
+        user = db.scalar(select(User).where(User.phone_e164 == "+919876543210"))
+        assert user is not None
+        save_access_token(str(user.id), "kiteAccessTokenValue123", secret_root=tmp_path)
+        record_zerodha(
+            db,
+            user.id,
+            client_id="NXJ652",
+            exchanges=["NSE"],
+            session_end=session_end(datetime.now(ZoneInfo("Asia/Kolkata"))),
+            correlation_id=None,
+        )
+        connected = client.get(f"/api/v1/signals/{by_symbol['RELIANCE']['id']}", headers=headers)
+        assert connected.json()["broker"]["code"] == "zerodha"
+        assert connected.json()["broker"]["status"] == "connected"
+        assert "does not send an order" in connected.json()["broker"]["message"]
 
-    refused = client.post(
-        "/api/v1/orders",
-        headers=headers,
-        json={
-            "signal_id": by_symbol["RELIANCE"]["id"],
-            "idempotency_key": "reliance-disabled",
-            "product": "MIS",
-            "quantity": 27,
-        },
-    )
-    assert refused.status_code == 403
-    assert refused.json()["error"]["code"] == "trading_disabled"
+        saved = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-confirm",
+                "product": "MIS",
+                "quantity": 27,
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["status"] == "proposed"
+        assert saved.json()["quantity"] == 27
+        assert saved.json()["sent_to_broker"] is False
+        assert saved.json()["protection"] == "not_active"
+        assert "not sent" in saved.json()["message"]
+        book = client.get("/api/v1/orders", headers=headers)
+        assert book.status_code == 200
+        assert len(book.json()) == 1
+        assert book.json()[0]["symbol"] == "RELIANCE"
+        assert book.json()[0]["status"] == "proposed"
+        assert book.json()[0]["side"] == "BUY"
+        assert book.json()[0]["sent_to_broker"] is False
+        again = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-confirm",
+                "product": "MIS",
+                "quantity": 27,
+            },
+        )
+        assert again.status_code == 200
+        assert again.json()["id"] == saved.json()["id"]
+        changed = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-confirm",
+                "product": "CNC",
+                "quantity": 27,
+            },
+        )
+        assert changed.status_code == 409
+        assert changed.json()["error"]["code"] == "idempotency_conflict"
+        preview = client.post(
+            "/api/v1/orders/preview",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "side": "BUY",
+                "product": "MIS",
+                "trigger_price": "2450.00",
+                "stop_loss": "2400.00",
+                "targets": [
+                    {"label": "T1", "price": "2474.00"},
+                    {"label": "T2", "price": "2490.00"},
+                ],
+            },
+        )
+        assert preview.status_code == 200
+        assert preview.json()["ok"] is True
+        assert preview.json()["quantity"] != 27
+        edited = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-edited",
+                "product": "MIS",
+                "quantity": preview.json()["quantity"],
+                "side": "BUY",
+                "trigger_price": "2450.00",
+                "stop_loss": "2400.00",
+                "targets": [
+                    {"label": "T1", "price": "2474.00"},
+                    {"label": "T2", "price": "2490.00"},
+                ],
+            },
+        )
+        assert edited.status_code == 200
+        assert edited.json()["id"] == saved.json()["id"]
+        assert edited.json()["stop_loss"] == "2400.00"
+        assert edited.json()["quantity"] == preview.json()["quantity"]
+        listed = client.get("/api/v1/orders", headers=headers)
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["id"] == saved.json()["id"]
+        assert listed.json()[0]["stop_loss"] == "2400.00"
+    finally:
+        for key in ("KITE_API_KEY", "KITE_API_SECRET"):
+            os.environ.pop(key, None)
+        get_settings.cache_clear()
 
     everything = client.get("/api/v1/signals?view=all", headers=headers).json()
     assert everything["hidden_non_actionable"] == 1
@@ -128,7 +233,7 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db):
     assert blocked.json()["error"]["code"] == "signal_not_actionable"
 
     db.rollback()
-    assert db.scalar(select(func.count()).select_from(OrderIntent)) == 0
+    assert db.scalar(select(func.count()).select_from(OrderIntent)) == 1
     assert db.scalar(select(func.count()).select_from(BrokerOrder)) == 0
     assert db.scalar(select(func.count()).select_from(PaymentTransaction)) == 0
 

@@ -1,11 +1,11 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
 import { useAuth } from "@/auth";
 import { AppShell } from "@/shell";
-import type { MeOut } from "@/types";
+import type { KiteAccountOut, KiteConnectOut, MeOut } from "@/types";
 import { colors, ui } from "@/ui";
 
 type RiskProfile = {
@@ -14,11 +14,6 @@ type RiskProfile = {
   max_quantity: number | null;
   max_exposure_inr: string | null;
   allowed_products: string[];
-};
-
-type BrokerConnection = {
-  status: string;
-  status_message: string | null;
 };
 
 export default function AccountScreen() {
@@ -31,16 +26,16 @@ export default function AccountScreen() {
   const [exposure, setExposure] = useState("");
   const [mis, setMis] = useState(true);
   const [cnc, setCnc] = useState(true);
-  const [broker, setBroker] = useState<BrokerConnection | null>(null);
+  const [zerodha, setZerodha] = useState<KiteAccountOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [profile, risk, connections] = await Promise.all([
+    const [profile, risk, kite] = await Promise.all([
       api<MeOut>("/api/v1/me"),
       api<RiskProfile>("/api/v1/me/risk-profile"),
-      api<BrokerConnection[]>("/api/v1/broker/connections"),
+      api<KiteAccountOut>("/api/v1/broker/zerodha"),
     ]);
     setMe(profile);
     setName(profile.display_name ?? "");
@@ -50,7 +45,7 @@ export default function AccountScreen() {
     setExposure(risk.max_exposure_inr ?? "");
     setMis(risk.allowed_products.includes("MIS"));
     setCnc(risk.allowed_products.includes("CNC"));
-    setBroker(connections[0] ?? null);
+    setZerodha(kite);
   }, []);
 
   useFocusEffect(
@@ -101,18 +96,26 @@ export default function AccountScreen() {
     }
   }
 
-  async function toggleBroker() {
+  async function signInZerodha() {
     setBusy(true);
     setError(null);
     try {
-      const path =
-        broker?.status === "connected"
-          ? "/api/v1/broker/connections/simulated/disconnect"
-          : "/api/v1/broker/connections/simulated";
-      const next = await api<BrokerConnection>(path, { method: "POST" });
-      setBroker(next);
+      const started = await api<KiteConnectOut>("/api/v1/broker/zerodha/connect", { method: "POST" });
+      await Linking.openURL(started.url);
     } catch (caught) {
-      setError(caught instanceof ApiRequestError ? caught.message : "The broker session was not recorded.");
+      setError(caught instanceof ApiRequestError ? caught.message : "Zerodha did not open.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnectZerodha() {
+    setBusy(true);
+    setError(null);
+    try {
+      setZerodha(await api<KiteAccountOut>("/api/v1/broker/zerodha/disconnect", { method: "POST" }));
+    } catch (caught) {
+      setError(caught instanceof ApiRequestError ? caught.message : "Zerodha could not be disconnected.");
     } finally {
       setBusy(false);
     }
@@ -152,15 +155,18 @@ export default function AccountScreen() {
               <Text style={ui.primaryText}>{busy ? "Saving…" : "Save account"}</Text>
             </Pressable>
             {saved ? <Text style={[ui.meta, { color: colors.accent }]}>{saved}</Text> : null}
-            <Text style={[ui.section, { marginTop: 16 }]}>Broker</Text>
-            <Text style={ui.meta}>
-              {broker?.status === "connected"
-                ? "Simulated session only. Quantivo will not send an order."
-                : "No simulated broker session. Order placement is disabled in this build."}
-            </Text>
-            <Pressable style={[ui.ghost, { marginTop: 8 }]} disabled={busy} onPress={toggleBroker}>
-              <Text style={ui.ghostText}>{broker?.status === "connected" ? "Disconnect simulated broker" : "Connect simulated broker"}</Text>
-            </Pressable>
+            <Text style={[ui.section, { marginTop: 16 }]}>Zerodha</Text>
+            <Text style={ui.meta}>{zerodha?.detail ?? "Zerodha is not loaded."}</Text>
+            {zerodha?.app_saved && zerodha.status !== "connected" ? (
+              <Pressable style={[ui.primary, { marginTop: 8 }]} disabled={busy} onPress={() => void signInZerodha()}>
+                <Text style={ui.primaryText}>{busy ? "Opening…" : "Sign in on Zerodha"}</Text>
+              </Pressable>
+            ) : null}
+            {zerodha?.status === "connected" ? (
+              <Pressable style={[ui.ghost, { marginTop: 8 }]} disabled={busy} onPress={() => void disconnectZerodha()}>
+                <Text style={ui.ghostText}>Disconnect Zerodha</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={ui.ghost}
               onPress={async () => {

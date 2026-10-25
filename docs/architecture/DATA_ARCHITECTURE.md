@@ -308,7 +308,7 @@ A partial unique index allows only one `active` row for a user and a scanner.
 | Column | Type | Null | Definition |
 | --- | --- | --- | --- |
 | `user_id` | uuid | no | Account |
-| `broker_code` | varchar(64) | no | `simulated` in Phase 1. Unique with the user |
+| `broker_code` | varchar(64) | no | `simulated` or `zerodha`. Unique with the user. A Zerodha access token is not a column |
 | `status` | varchar(32) | no | `disconnected`, `connected`, `expired`, or `unavailable` |
 | `display_name` | varchar(120) | yes | `Simulated broker` |
 | `external_account_ref` | varchar(128) | yes | A generated `SIM-` reference. Not a real broker account |
@@ -319,7 +319,7 @@ A partial unique index allows only one `active` row for a user and a scanner.
 
 **`position_snapshots`** ? append-only, `created_at` only. `source` is `broker` or `reconciliation`. Quantity and average price are broker facts. Phase 1 inserts none.
 
-**`order_intents`** ? unique `idempotency_key`. `product` is `MIS` or `CNC`. `requested_quantity` is positive. `validated_quantity` is the server quantity when a later phase stores the intent. `status` uses the lifecycle vocabulary from proposed through failed. Phase 1 inserts none.
+**`order_intents`** — unique `idempotency_key`, and one `proposed` row per trader and call. `side` is `BUY` or `SELL`. `product` is `MIS` or `CNC`. `trigger_price`, `stop_loss`, and `targets` are the prices the trader confirmed, filled from the call unless they edited them. `requested_quantity` and `validated_quantity` are the server quantity. `status` uses the lifecycle vocabulary from proposed through failed. A confirmation writes `proposed`. Orders lists that trader's rows. No broker order is written, and the stop is not active.
 
 **`broker_orders`** ? `role` is `entry`, `stop_loss`, or `target`. `broker_order_id` is the broker's id and may be null before acceptance. `status` is the broker status. `quantity` is positive. `price` is the broker price when known. Phase 1 inserts none.
 

@@ -17,6 +17,7 @@ type Item = {
 const places: Item[] = [
   { href: "/signals", label: "Home", current: (path) => path === "/signals" },
   { href: "/scanners", label: "Scanners", current: (path) => path.startsWith("/scanners") },
+  { href: "/orders", label: "Orders", current: (path) => path.startsWith("/orders") },
   { href: "/account", label: "Account", current: (path) => path.startsWith("/account") },
 ];
 
