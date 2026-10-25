@@ -1580,7 +1580,7 @@
       state.includeClosed = button.getAttribute("data-view") === "all";
     } else if (action === "open-signal") {
       state.selected = button.getAttribute("data-symbol");
-      state.product = findSignal(state.selected).product;
+      state.product = "MIS";
       state.confirmed = "";
       state.ticket = "";
       state.editing = false;

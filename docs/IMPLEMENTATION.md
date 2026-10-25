@@ -50,7 +50,7 @@ Done means the behavior is in the API or the app and covered by the Phase 1 test
 
 ### Phase 3 — Simulated trading
 
-- [x] One stored intent before any broker call. A repeated tap does not create a second intent. The ticket is filled from the call, and prices can be edited. Zerodha is not called. Orders lists those saved intents and their status
+- [x] One stored intent before any broker call. A repeated tap does not create a second intent. The ticket is filled from the call, the product starts as MIS, and prices can be edited. Zerodha is not called. Orders lists those saved intents and their status
 - [ ] Simulated fill and protection. A stop or target is active only after the broker says so
 - [ ] Positions show what the simulated broker reported
 

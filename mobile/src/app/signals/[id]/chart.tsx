@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
+import { useAuth } from "@/auth";
 import { quoteTone } from "@/quote";
 import { AppShell } from "@/shell";
 import type { ChartCandle, SignalChart, SignalDetail } from "@/types";
@@ -49,6 +50,7 @@ type Grant = {
 
 export default function SignalChartScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { ready, userId } = useAuth();
   const [interval, setInterval] = useState<"1m" | "5m">("5m");
   const [chart, setChart] = useState<SignalChart | null>(null);
   const [signal, setSignal] = useState<SignalDetail | null>(null);
@@ -68,8 +70,16 @@ export default function SignalChartScreen() {
   }, [id, interval]);
 
   useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    if (!userId) {
+      router.replace("/");
+      return;
+    }
     let cancelled = false;
     setChart(null);
+    setError(null);
     load().catch((caught: unknown) => {
       if (!cancelled) {
         setError(caught instanceof ApiRequestError ? caught.message : "The chart is not available.");
@@ -78,13 +88,16 @@ export default function SignalChartScreen() {
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, [load, ready, userId]);
 
   const traded = chart?.quote_state === "ready" && chart.last_price ? chart.last_price : "—";
   const tone = quoteTone(chart?.quote_state === "ready" ? chart.change_percent : null);
 
   return (
-    <AppShell title={chart?.symbol ?? signal?.symbol ?? "Chart"} onBack={() => router.back()}>
+    <AppShell
+      title={chart?.symbol ?? signal?.symbol ?? "Chart"}
+      onBack={() => router.replace(id ? `/signals/${id}` : "/signals")}
+    >
       <ScrollView scrollEnabled={scrollable} contentContainerStyle={{ paddingLeft: 16, paddingBottom: 28 }}>
         <View style={{ paddingRight: 16 }}>
         <View style={ui.viewBar}>

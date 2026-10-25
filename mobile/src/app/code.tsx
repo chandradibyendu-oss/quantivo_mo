@@ -59,7 +59,7 @@ export default function CodeScreen() {
       <Pressable style={ui.primary} disabled={busy} onPress={continueWithCode}>
         <Text style={ui.primaryText}>{busy ? "Checking…" : "Continue"}</Text>
       </Pressable>
-      <Pressable style={ui.ghost} onPress={() => router.back()}>
+      <Pressable style={ui.ghost} onPress={() => router.replace("/")}>
         <Text style={ui.ghostText}>Change number</Text>
       </Pressable>
     </SafeAreaView>

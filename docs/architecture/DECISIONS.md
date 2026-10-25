@@ -424,7 +424,7 @@ The home row is All, then each source channel by its display name. All is the ca
 
 **Context.** The trader should be able to accept a call in two taps, with the call's prices already filled in, and change those prices when they want to. The order still cannot leave this machine. Zerodha rejects an order that does not come from a registered static IP, and live trading stays off until that path is reviewed.
 
-**Decision.** Buy and Sell open a ticket filled from the call. The trader may edit the product, trigger, stop, and targets. The server recalculates quantity from the trigger and the stop and rejects a different quantity. Confirm writes one `proposed` intent for that trader and call, including the prices they confirmed. The same confirmation key returns that row. An unsent intent is updated when they confirm different prices. No broker order is written, and the stop and targets are not shown as active.
+**Decision.** Buy and Sell open a ticket filled from the call. The product starts as MIS, and the trader may change it to CNC. The trader may also edit the trigger, stop, and targets. The server recalculates quantity from the trigger and the stop and rejects a different quantity. Confirm writes one `proposed` intent for that trader and call, including the prices they confirmed. The same confirmation key returns that row. An unsent intent is updated when they confirm different prices. No broker order is written, and the stop and targets are not shown as active.
 
 **Consequences.** The phone says the order was saved and that Zerodha was not sent it. Orders lists those saved intents for the signed-in trader, newest first, with the status. A fill, an active stop, and a real Kite order wait for the reviewed broker path.
 

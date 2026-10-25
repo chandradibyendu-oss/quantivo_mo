@@ -16,13 +16,17 @@ type Draft = {
 };
 
 export function OrderTicket({ signal }: { signal: SignalDetail }) {
-  const [product, setProduct] = useState<"MIS" | "CNC">(signal.product_hint === "CNC" ? "CNC" : "MIS");
+  const [product, setProduct] = useState<"MIS" | "CNC">("MIS");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
   const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [saved, setSaved] = useState<OrderIntent | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setProduct("MIS");
+  }, [signal.id]);
 
   useEffect(() => {
     let cancelled = false;

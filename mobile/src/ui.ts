@@ -122,6 +122,7 @@ export const ui = StyleSheet.create({
     height: 40,
     alignItems: "center",
     justifyContent: "center",
+    cursor: "pointer",
   },
   bar: {
     flexDirection: "row",
@@ -220,6 +221,7 @@ export const ui = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
+    cursor: "pointer",
   },
   tabOn: {
     borderBottomColor: colors.accent,
@@ -248,6 +250,7 @@ export const ui = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
+    cursor: "pointer",
   },
   viewSegmentOn: {
     backgroundColor: colors.accent,

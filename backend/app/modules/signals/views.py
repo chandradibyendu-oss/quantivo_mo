@@ -16,6 +16,7 @@ from app.modules.progress.candles import session_candles
 from app.modules.progress.marks import CLOSED_MARKS, apply_progress
 from app.modules.quotes.fyers import QuoteSource, read_last_prices
 from app.modules.risk.calculator import FORMULA, FUNDS_NOTE, RiskInputs, calculate
+from app.modules.risk.models import RiskProfile
 from app.modules.risk.service import get_profile
 from app.modules.scanners.channels import list_scanner_channels, visible_channel_ids
 from app.modules.scanners.models import Scanner, ScannerProvider, SourceChannel
@@ -62,8 +63,14 @@ def _provider_values(signal: Signal) -> ProviderValues:
     )
 
 
-def _quantivo_values(db: Session, user_id: UUID, signal: Signal) -> QuantivoValues:
-    profile = get_profile(db, user_id)
+def _quantivo_values(
+    db: Session,
+    user_id: UUID,
+    signal: Signal,
+    profile: RiskProfile | None = None,
+) -> QuantivoValues:
+    if profile is None:
+        profile = get_profile(db, user_id)
     result = calculate(
         RiskInputs(
             side=signal.side,
@@ -105,11 +112,14 @@ def _card(
     provider: ScannerProvider,
     now: datetime,
     clocks: CallClocks,
+    profile: RiskProfile | None = None,
+    channel: SourceChannel | None = None,
 ) -> SignalCard:
     status = derived_status(signal, now, clocks)
     guide, guide_label, guide_hint = guide_for(signal, now, clocks)
-    calculated = _quantivo_values(db, user_id, signal)
-    channel = _channel(db, signal)
+    calculated = _quantivo_values(db, user_id, signal, profile)
+    if channel is None:
+        channel = _channel(db, signal)
     return SignalCard(
         id=signal.id,
         symbol=signal.symbol,
@@ -221,6 +231,8 @@ def list_signals(
     rows = list(db.scalars(statement.order_by(Signal.published_at.desc())).all())
     now = utcnow()
     clocks = load_clocks(db)
+    profile: RiskProfile | None = None
+    channel_by_id = {channel.id: channel for channel in channels}
     cards: list[SignalCard] = []
     hidden = 0
     for signal in rows:
@@ -229,6 +241,8 @@ def list_signals(
             hidden += 1
             if view == "actionable":
                 continue
+        if profile is None:
+            profile = get_profile(db, user_id)
         cards.append(
             _card(
                 db,
@@ -238,6 +252,8 @@ def list_signals(
                 provider=provider,
                 now=now,
                 clocks=clocks,
+                profile=profile,
+                channel=channel_by_id.get(signal.source_channel_id),
             )
         )
     quote_feed, cards = _with_quotes(cards)
