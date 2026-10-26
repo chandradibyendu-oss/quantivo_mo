@@ -1,11 +1,11 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
 import { useAuth } from "@/auth";
 import { AppShell } from "@/shell";
-import type { ScannerOut, TraderChannel } from "@/types";
+import type { MeOut, ScannerOut, TraderChannel } from "@/types";
 import { colors, ui } from "@/ui";
 
 export default function ScannersScreen() {
@@ -14,8 +14,14 @@ export default function ScannersScreen() {
   const [channels, setChannels] = useState<TraderChannel[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [operator, setOperator] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [channelDrafts, setChannelDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    const me = await api<MeOut>("/api/v1/me");
+    setOperator(me.roles.includes("admin"));
     const catalogue = await api<ScannerOut[]>("/api/v1/scanners");
     setScanners(catalogue);
     if (catalogue.some((item) => item.entitlement_status === "active")) {
@@ -54,6 +60,51 @@ export default function ScannersScreen() {
       await load();
     } catch (caught) {
       setError(caught instanceof ApiRequestError ? caught.message : "Activation failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function openEdit(scanner: ScannerOut) {
+    setEditing(scanner.id);
+    setDraftName(scanner.name);
+    setChannelDrafts(
+      Object.fromEntries(
+        channels.filter((channel) => channel.scanner_id === scanner.id).map((channel) => [channel.id, channel.name]),
+      ),
+    );
+    setError(null);
+  }
+
+  async function saveEdit(scanner: ScannerOut) {
+    const named = draftName.trim();
+    if (!named) {
+      setError("Enter a scanner name.");
+      return;
+    }
+    setBusy(scanner.id);
+    setError(null);
+    try {
+      if (named !== scanner.name) {
+        await api(`/api/v1/admin/scanners/${scanner.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ name: named }),
+        });
+      }
+      const rows = channels.filter((channel) => channel.scanner_id === scanner.id);
+      for (const channel of rows) {
+        const next = (channelDrafts[channel.id] ?? channel.name).trim();
+        if (next && next !== channel.name) {
+          await api(`/api/v1/admin/source-channels/${channel.id}`, {
+            method: "PUT",
+            body: JSON.stringify({ name: next }),
+          });
+        }
+      }
+      setEditing(null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof ApiRequestError ? caught.message : "The scanner could not be saved.");
     } finally {
       setBusy(null);
     }
@@ -100,7 +151,52 @@ export default function ScannersScreen() {
                 <Text style={ui.rowTitle}>{scanner.name}</Text>
                 <Text style={ui.meta}>{scanner.provider_name}</Text>
               </View>
+              {operator ? (
+                <Pressable
+                  onPress={() => (editing === scanner.id ? setEditing(null) : openEdit(scanner))}
+                  style={{
+                    borderWidth: 2,
+                    borderColor: colors.ink,
+                    borderRadius: 999,
+                    paddingHorizontal: 14,
+                    minHeight: 40,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ color: colors.ink, fontSize: 16, fontWeight: "800" }}>
+                    {editing === scanner.id ? "Cancel" : "Edit"}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
+            {editing === scanner.id ? (
+              <View>
+                <Text style={[ui.label, { marginTop: 12 }]}>Scanner name</Text>
+                <TextInput style={ui.input} value={draftName} onChangeText={setDraftName} />
+                {channels
+                  .filter((channel) => channel.scanner_id === scanner.id)
+                  .map((channel) => (
+                    <View key={channel.id}>
+                      <Text style={ui.label}>Channel name</Text>
+                      <TextInput
+                        style={ui.input}
+                        value={channelDrafts[channel.id] ?? channel.name}
+                        onChangeText={(value) =>
+                          setChannelDrafts((current) => ({ ...current, [channel.id]: value }))
+                        }
+                      />
+                    </View>
+                  ))}
+                <Pressable
+                  style={ui.primary}
+                  disabled={busy === scanner.id}
+                  onPress={() => saveEdit(scanner)}
+                >
+                  <Text style={ui.primaryText}>{busy === scanner.id ? "Saving…" : "Save"}</Text>
+                </Pressable>
+              </View>
+            ) : null}
             <Text style={[ui.meta, { marginTop: 8 }]}>{scanner.description}</Text>
             <Text style={[ui.rowTitle, { marginTop: 8 }]}>
               {scanner.price_inr ? `₹${scanner.price_inr}` : "Price not listed"}

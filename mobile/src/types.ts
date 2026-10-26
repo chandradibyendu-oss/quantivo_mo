@@ -134,6 +134,20 @@ export type OrderPreview = {
   targets: TargetOut[];
 };
 
+export type AdminOrderRow = {
+  id: string;
+  signal_id: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  product: "MIS" | "CNC";
+  quantity: number;
+  trigger_price: string;
+  stop_loss: string;
+  status: "proposed";
+  phone_e164: string;
+  saved_at: string;
+};
+
 export type OrderBookRow = {
   id: string;
   signal_id: string;

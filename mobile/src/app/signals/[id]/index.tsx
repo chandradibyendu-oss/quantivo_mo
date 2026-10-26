@@ -6,6 +6,7 @@ import { api, ApiRequestError } from "@/api";
 import { GuideMark } from "@/guide";
 import { ChartMark } from "@/marks";
 import { quoteTone } from "@/quote";
+import { shownTargets } from "@/targets";
 import { AppShell } from "@/shell";
 import type { SignalDetail } from "@/types";
 import { colors, ui } from "@/ui";
@@ -91,10 +92,12 @@ export default function SignalDetailScreen() {
                 {signal.side} · trigger {signal.provider_values.trigger_price}
               </Text>
               <Text style={ui.meta}>Stop {signal.provider_values.stop_loss}</Text>
-              {signal.provider_values.targets.map((target) => (
-                <Text key={target.label} style={ui.meta}>
+              {shownTargets(signal.provider_values.targets).map((target, index) => (
+                <Text key={`${target.label}-${index}`} style={ui.meta}>
                   {target.label} {target.price}
-                  {target.risk_reward ? ` · RR ${target.risk_reward}` : ""}
+                  {signal.provider_values.targets[index]?.risk_reward
+                    ? ` · RR ${signal.provider_values.targets[index].risk_reward}`
+                    : ""}
                 </Text>
               ))}
               {signal.provider_values.note ? <Text style={ui.meta}>{signal.provider_values.note}</Text> : null}

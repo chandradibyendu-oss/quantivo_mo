@@ -15,6 +15,7 @@ from app.modules.feeds.schemas import (
     ReaderOut,
     ScannerCreate,
     ScannerCreated,
+    ScannerRename,
     TelegramLoginOut,
 )
 from app.modules.feeds.service import list_feeds, reader_state, save_feed, telegram_login_status
@@ -23,6 +24,7 @@ from app.modules.scanners.channels import (
     create_scanner,
     create_source_channel,
     delete_source_channel,
+    rename_scanner,
     rename_source_channel,
     stored_call_count,
 )
@@ -76,6 +78,24 @@ def add_scanner(
         provider_name=body.provider_name,
         name=body.name,
         category=body.category,
+        actor_user_id=principal.user.id,
+        correlation_id=correlation_id,
+    )
+    return ScannerCreated(id=scanner.id, name=scanner.name, provider_name=provider.name)
+
+
+@router.put("/scanners/{scanner_id}", response_model=ScannerCreated)
+def rename_catalogue_scanner(
+    scanner_id: UUID,
+    body: ScannerRename,
+    principal: Writer,
+    db: Db,
+    correlation_id: CorrelationId,
+) -> ScannerCreated:
+    scanner, provider = rename_scanner(
+        db,
+        scanner_id=scanner_id,
+        name=body.name,
         actor_user_id=principal.user.id,
         correlation_id=correlation_id,
     )

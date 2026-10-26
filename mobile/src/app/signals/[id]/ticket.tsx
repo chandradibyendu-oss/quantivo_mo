@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
+import { shownTargets } from "@/targets";
 import type { OrderIntent, OrderPreview, SignalDetail } from "@/types";
 import { colors, ui } from "@/ui";
 
@@ -197,7 +198,7 @@ export function OrderTicket({ signal }: { signal: SignalDetail }) {
           {draft.targets.map((target, index) => (
             <PriceRow
               key={target.label}
-              label={target.label}
+              label={shownTargets(draft.targets)[index]?.label ?? target.label}
               value={target.price}
               editing={editing}
               onChange={(price) => {

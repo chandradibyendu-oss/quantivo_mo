@@ -27,6 +27,9 @@ dev = [
 feeds = [
     "telethon>=1.36",
 ]
+quotes = [
+    "fyers-apiv3>=3.1.7",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

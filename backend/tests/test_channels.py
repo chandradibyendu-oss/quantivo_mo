@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.grant_admin import grant_admin_role
 from app.modules.orders.models import OrderIntent
 from app.modules.signals.models import Signal
@@ -111,6 +113,20 @@ def test_a_scanner_keeps_its_own_channels(client, db):
     listed = client.get("/api/v1/scanners", headers=headers).json()
     harbour = [item for item in listed if item["provider_name"] == "Harbour"]
     assert [item["name"] for item in harbour] == ["Harbour Calls", "Harbour Swing"]
+    renamed = client.put(
+        f"/api/v1/admin/scanners/{scanner_id}",
+        headers=headers,
+        json={"name": "Harbour Desk"},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Harbour Desk"
+    assert renamed.json()["provider_name"] == "Harbour"
+    again = client.get("/api/v1/scanners", headers=headers).json()
+    harbour = [item for item in again if item["provider_name"] == "Harbour"]
+    assert [item["name"] for item in harbour] == ["Harbour Desk", "Harbour Swing"]
+    assert harbour[0]["description"] == (
+        "Harbour Desk from Harbour. Channels are added separately."
+    )
     assert harbour[0]["price_inr"] is None
     assert harbour[0]["verified_rating"] is None
 
@@ -181,7 +197,11 @@ def test_delete_removes_an_empty_channel_and_refuses_one_with_an_order(client, d
             signal_id=signal_id,
             idempotency_key="channel-delete-blocked",
             status="proposed",
+            side="BUY",
             product="MIS",
+            trigger_price=Decimal("100"),
+            stop_loss=Decimal("90"),
+            targets=[{"label": "T1", "price": "110"}],
             requested_quantity=1,
         )
     )

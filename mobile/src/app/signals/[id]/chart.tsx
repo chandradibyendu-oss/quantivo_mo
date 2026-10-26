@@ -14,6 +14,7 @@ import {
 import { api, ApiRequestError } from "@/api";
 import { useAuth } from "@/auth";
 import { quoteTone } from "@/quote";
+import { shownTargets } from "@/targets";
 import { AppShell } from "@/shell";
 import type { ChartCandle, SignalChart, SignalDetail } from "@/types";
 import { colors, ui } from "@/ui";
@@ -272,7 +273,7 @@ function levelsOf(chart: SignalChart): Level[] {
   return [
     { label: "Trigger", price: Number(chart.trigger_price), color: colors.accent },
     { label: "Stop", price: Number(chart.stop_loss), color: colors.sell },
-    ...chart.targets.map((target) => ({
+    ...shownTargets(chart.targets).map((target) => ({
       label: target.label,
       price: Number(target.price),
       color: colors.buy,
@@ -823,7 +824,7 @@ function CandleChart({ chart, onGesture }: { chart: SignalChart; onGesture: (act
       </View>
       <Text style={[ui.meta, { paddingRight: 16 }]}>
         Trigger {chart.trigger_price} · Stop {chart.stop_loss}
-        {chart.targets.map((target) => ` · ${target.label} ${target.price}`).join("")}
+        {shownTargets(chart.targets).map((target) => ` · ${target.label} ${target.price}`).join("")}
       </Text>
       <Text style={[ui.meta, { paddingRight: 16 }]}>Drag the right scale for height. Drag the times to fit more candles.</Text>
     </View>

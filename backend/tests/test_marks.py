@@ -154,3 +154,72 @@ def test_without_fyers_the_clock_mark_stays(monkeypatch):
     painted = apply_progress([_card()], now=datetime(2026, 10, 24, 12, 0, tzinfo=IST))
     assert painted[0].guide == "window_over"
     assert painted[0].suggested_quantity == 12
+
+
+def test_a_trail_is_not_an_entry(monkeypatch):
+    _use_bars(monkeypatch)
+    remember_day(
+        "NSE:SBIN-EQ",
+        date(2026, 10, 23),
+        [_bar(4, "111", "99", "105"), _bar(20, "112", "104", "111"), _bar(29, "111", "104", "108")],
+        now=datetime(2026, 10, 23, 16, 0, tzinfo=IST),
+        retry=None,
+    )
+    try:
+        painted = apply_progress([_card()], now=datetime(2026, 10, 23, 16, 0, tzinfo=IST))
+    finally:
+        clear_history_cache()
+    assert painted[0].guide == "t1_trail"
+    assert painted[0].executable is False
+
+
+def test_a_last_price_through_the_stop_is_not_an_entry():
+    from app.modules.progress.marks import quote_gate, quote_spent
+
+    card = _card().model_copy(
+        update={
+            "guide": "checking",
+            "guide_label": "Checking",
+            "guide_hint": "Reading the one-minute bars.",
+            "last_price": "89.00",
+            "quote_state": "ready",
+        }
+    )
+    assert quote_spent(card) is True
+    gated = quote_gate(card)
+    assert gated.guide == "stop"
+    assert gated.guide_label == "Stop"
+    assert gated.executable is False
+    assert "fresh call" in gated.guide_hint
+    reached = card.model_copy(update={"last_price": "115.00"})
+    trail = quote_gate(reached)
+    assert trail.guide == "t1_trail"
+    assert trail.guide_label == "T1 trail"
+    finished = card.model_copy(update={"last_price": "120.00"})
+    final = quote_gate(finished)
+    assert final.guide == "final"
+    assert final.guide_label == "Final"
+
+
+def test_a_finished_mark_is_not_fetched_again(monkeypatch):
+    from datetime import timedelta
+
+    _use_bars(monkeypatch)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "app.modules.progress.marks.request_day",
+        lambda *args, **kwargs: calls.append(args),
+    )
+    remember_day(
+        "NSE:SBIN-EQ",
+        date(2026, 10, 23),
+        [_bar(4, "111", "99", "105"), _bar(40, "106", "89", "95")],
+        now=datetime(2026, 10, 23, 10, 0, tzinfo=IST),
+        retry=timedelta(seconds=60),
+    )
+    try:
+        painted = apply_progress([_card()], now=datetime(2026, 10, 23, 16, 0, tzinfo=IST))
+    finally:
+        clear_history_cache()
+    assert painted[0].guide == "stop"
+    assert calls == []

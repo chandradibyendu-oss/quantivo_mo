@@ -38,6 +38,9 @@ def assess_path(
     moment = _ist(now)
     ordered = sorted(bars, key=lambda bar: _ist(bar[0]))
     entry_at, entry_open = _entry(side, trigger, sent, deadline, ordered)
+    blocked = _stop_before_entry(side, trigger, stop, sent, deadline, ordered)
+    if blocked is not None and (entry_open is None or blocked < entry_open):
+        return Progress("caution", blocked)
     if entry_at is None:
         if moment < deadline:
             for opened, high, low, _close in _quads(ordered):
@@ -77,6 +80,22 @@ def assess_path(
 def _quads(ordered):
     for bar in ordered:
         yield bar[0], bar[1], bar[2], bar[3]
+
+
+def _stop_before_entry(side, trigger, stop, sent, deadline, ordered):
+    """The first stop touch that is not on the same bar as a close through the trigger."""
+
+    for opened, high, low, close in _quads(ordered):
+        opened = _ist(opened)
+        closed_at = opened + _BAR
+        if closed_at <= sent or opened >= deadline:
+            continue
+        if not _hit_stop(side, high, low, stop):
+            continue
+        if _closed_through(side, close, trigger):
+            continue
+        return opened
+    return None
 
 
 def _entry(side, trigger, sent, deadline, ordered):

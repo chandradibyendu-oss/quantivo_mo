@@ -47,10 +47,12 @@ def test_the_percent_comes_from_the_previous_close():
     assert flat["NSE:SBIN-EQ"].change_percent is None
 
 
-def test_a_rate_limit_waits_a_minute_before_the_next_read():
+def test_a_rate_limit_pauses_the_next_read():
+    from app.modules.quotes.budget import set_pause_jitter
     from app.modules.quotes.fyers import clear_quote_cache, pause_quotes
 
     now = datetime(2026, 10, 24, 6, 0, tzinfo=UTC)
+    set_pause_jitter(lambda: 0)
 
     def opener(url, authorization):
         raise AssertionError(url + authorization)
@@ -64,12 +66,13 @@ def test_a_rate_limit_waits_a_minute_before_the_next_read():
             opener=opener,
             cache={},
             series={"SBIN": "EQ"},
-            now=now + timedelta(minutes=2),
+            now=now + timedelta(seconds=5),
         )
         assert paused.source == "unavailable"
         assert paused.prices == {}
     finally:
         clear_quote_cache()
+        set_pause_jitter(lambda: __import__("random").uniform(0, 5))
 
 
 def test_quotes_stay_empty_until_a_fyers_app_is_configured():
@@ -138,6 +141,37 @@ def test_a_read_is_reused_for_a_minute_and_a_failure_returns_no_price():
     )
     assert failed.source == "unavailable"
     assert failed.prices == {}
+
+
+def test_a_fresh_socket_price_is_not_read_again_from_the_quote_call():
+    from app.modules.quotes.fyers import clear_quote_cache
+    from app.modules.quotes.live import clear_live, remember_tick
+
+    now = datetime(2026, 10, 23, 4, 30, tzinfo=UTC)
+    remember_tick(
+        {"symbol": "NSE:SBIN-EQ", "type": "sf", "ltp": 785.5, "chp": 1.25},
+        now,
+    )
+
+    def opener(url, authorization):
+        raise AssertionError(url + authorization)
+
+    try:
+        batch = read_last_prices(
+            [("NSE", "SBIN")],
+            app_id="app",
+            access_token="token",
+            opener=opener,
+            cache={},
+            series={"SBIN": "EQ"},
+            now=now + timedelta(seconds=10),
+        )
+    finally:
+        clear_live()
+        clear_quote_cache()
+    assert batch.source == "fyers"
+    assert batch.prices[("NSE", "SBIN")] == Decimal("785.5")
+    assert batch.changes[("NSE", "SBIN")] == Decimal("1.25")
 
 
 def test_the_call_carries_the_last_price_and_leaves_quantity_alone(monkeypatch):

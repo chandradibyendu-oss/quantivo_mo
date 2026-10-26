@@ -36,6 +36,20 @@ class OrderBookOut(BaseModel):
     message: str
 
 
+class AdminOrderOut(BaseModel):
+    id: UUID
+    signal_id: UUID
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    product: Literal["MIS", "CNC"]
+    quantity: int
+    trigger_price: str
+    stop_loss: str
+    status: Literal["proposed"]
+    phone_e164: str
+    saved_at: datetime
+
+
 class OrderIntentOut(BaseModel):
     id: UUID
     signal_id: UUID

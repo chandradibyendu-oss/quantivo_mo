@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 from uuid import UUID
 
@@ -10,10 +10,11 @@ from app.core.database import utcnow
 from app.core.errors import AppError
 from app.core.money import money
 from app.modules.brokers.service import broker_for_trader
+from app.modules.feeds.equity_parser import align_prices
 from app.modules.feeds.service import scanner_feed_mode
 from app.modules.feeds.window import quote_label, session_day
 from app.modules.progress.candles import session_candles
-from app.modules.progress.marks import CLOSED_MARKS, apply_progress
+from app.modules.progress.marks import CLOSED_MARKS, apply_progress, quote_gate, quote_spent
 from app.modules.quotes.fyers import QuoteSource, read_last_prices
 from app.modules.risk.calculator import FORMULA, FUNDS_NOTE, RiskInputs, calculate
 from app.modules.risk.models import RiskProfile
@@ -257,10 +258,11 @@ def list_signals(
             )
         )
     quote_feed, cards = _with_quotes(cards)
-    cards = apply_progress(cards, now=now)
+    cards = [align_card(card) for card in cards]
+    cards = [quote_gate(card) for card in apply_progress(cards, now=now)]
     shown: list[SignalCard] = []
     for card in cards:
-        if card.guide in CLOSED_MARKS:
+        if card.guide in CLOSED_MARKS or quote_spent(card):
             hidden += 1
             if view == "actionable":
                 continue
@@ -283,6 +285,47 @@ def list_signals(
         selected_channel_name=selected_name,
         quote_feed=quote_feed,
         signals=cards,
+    )
+
+
+def align_card(card: SignalCard) -> SignalCard:
+    """Correct a missing zero or a slipped decimal using the current price."""
+
+    if card.segment.casefold() != "equity" or not card.provider_values.targets:
+        return card
+    try:
+        trigger = Decimal(card.provider_values.trigger_price)
+        stop = Decimal(card.provider_values.stop_loss)
+        targets = [Decimal(item.price) for item in card.provider_values.targets]
+    except InvalidOperation:
+        return card
+    anchor = None
+    if card.quote_state == "ready" and card.last_price:
+        try:
+            anchor = Decimal(card.last_price)
+        except InvalidOperation:
+            anchor = None
+    new_trigger, new_stop, new_targets = align_prices(
+        card.side, trigger, stop, targets, anchor
+    )
+    if new_trigger == trigger and new_stop == stop and new_targets == targets:
+        return card
+    return card.model_copy(
+        update={
+            "provider_values": ProviderValues(
+                trigger_price=money(new_trigger) or card.provider_values.trigger_price,
+                stop_loss=money(new_stop) or card.provider_values.stop_loss,
+                targets=[
+                    TargetOut(
+                        label=item.label,
+                        price=money(price) or item.price,
+                        risk_reward=_reward_risk(new_trigger, new_stop, price),
+                    )
+                    for item, price in zip(card.provider_values.targets, new_targets, strict=True)
+                ],
+                note=card.provider_values.note,
+            )
+        }
     )
 
 
@@ -371,7 +414,7 @@ def get_signal(db: Session, *, user_id: UUID, signal_id: UUID) -> SignalDetail:
         clocks=load_clocks(db),
     )
     _feed, quoted = _with_quotes([card], actionable_only=False)
-    card = apply_progress(quoted, now=utcnow())[0]
+    card = quote_gate(apply_progress([align_card(quoted[0])], now=utcnow())[0])
     return SignalDetail(
         **card.model_dump(),
         broker=_broker_summary(db, user_id, moment),

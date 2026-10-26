@@ -167,8 +167,8 @@
         <p class="warn" data-locked-copy></p>
         <button type="button" class="primary" data-action="register-channel">Register for this channel</button>
       </div>
-      <p class="fine">While this list is open, stored calls are read again every 5 seconds. The last traded price is reused for up to a minute. On a weekday from 09:15 to 15:30 IST a new Telegram post is stored about every 5 seconds.</p>
-      <p class="fine">Last LTP is the last traded price from Fyers for an NSE cash symbol. During the cash session the same line says LTP. The price is green when it is above the previous close and red when it is below, with that percent beside it. These review figures are samples. The price is not the trigger and does not change quantity. The candlestick icon opens the session candles at 1 minute and 5 minutes. Entry, Caution, Not valid, T1 trail, T2 trail, Final, and Stop are the price marks. The time on the chip is the minute of the one-minute bar. These review times are samples. Not valid, Final, and Stop leave Actionable.</p>
+      <p class="fine">While this list is open, stored calls are read again every 5 seconds. The last traded price comes from one Fyers data socket on the server. A symbol with no recent tick reuses a quote for up to a minute. On a weekday from 09:15 to 15:30 IST a new Telegram post is stored about every 5 seconds. A buy missing its stop or target is completed from the next Telegram message when that message follows within 10 minutes.</p>
+      <p class="fine">Last LTP is the last traded price from Fyers for an NSE cash symbol. During the cash session the same line says LTP. The price is green when it is above the previous close and red when it is below, with that percent beside it. These review figures are samples. The price is not the trigger and does not change quantity. A stop or a target on the wrong side of the buy moves by a power of ten when the current price shows a missing zero or a slipped decimal. The row shows the trigger, the stop, and the targets. The final target is Last. T2 is shown only when a price sits between the first target and the last. The candlestick icon opens the session candles at 1 minute and 5 minutes. A finished minute is saved, and that day is not requested again. The minute still forming comes from the live price. Entry, Caution, Not valid, T1 trail, T2 trail, Final, and Stop are the price marks. The time on the chip is the minute of the one-minute bar. These review times are samples. A call that has touched the first target or the stop leaves Actionable, including Caution and a trail. A last price already through the first target or the stop leaves Actionable as well. That call is not an entry until a fresh call. Not valid, Final, and Stop leave too.</p>
       <p class="fine">A signal is not an order. Nothing is sent unless you confirm it, and this build does not send orders.</p>
     </section>
     <section data-screen="detail" hidden>
@@ -187,7 +187,9 @@
             <h3>Mani's Channel</h3>
             <p>Mani's</p>
           </div>
+          <button type="button" class="ghost" style="margin-left:auto">Edit</button>
         </div>
+        <p class="fine">Edit is on the card for an operator. It changes the scanner name, and a channel name when the card lists one. The provider name stays.</p>
         <p>Register a channel to see its calls. Each channel keeps its own horizon words.</p>
         <p class="meta">Equity · Intraday to 7 days, Short term, Long term. F&amp;O · Intraday. Commodity · Positional.</p>
         <p class="price">₹999 monthly</p>
@@ -269,6 +271,11 @@
         <p>Kite app saved.</p>
         <p class="fine">Save the Kite Connect api key and api secret once, and register the callback URL on that app. A trader signs in on Zerodha from Account. The session lasts until 6:00 AM IST. Zerodha does not refresh it. This build does not send an order.</p>
       </article>
+      <h3>Saved orders</h3>
+      <article class="offer">
+        <p class="fine">These are proposed orders that were not sent to Zerodha. Deleting one asks first, removes that saved intent, and leaves the call in place. An order that was sent stays in the list.</p>
+        <p>No saved orders.</p>
+      </article>
       <h3>Scanners</h3>
       <article class="offer">
         <h3>Add a scanner</h3>
@@ -281,11 +288,19 @@
         <p class="fine">A new scanner starts with no channels and no price. The same provider name adds another scanner under that provider.</p>
         <button type="button" class="primary">Add scanner</button>
       </article>
+      <article class="offer">
+        <h3>Mani's</h3>
+        <label class="field">Scanner name
+          <input value="Mani's Channel">
+        </label>
+        <p class="fine">This is the name traders open. Save scanner stores it. The provider name stays.</p>
+        <button type="button" class="primary">Save scanner</button>
+      </article>
       <h3>Channels</h3>
       <article class="offer">
         <h3>Add a channel</h3>
         <p class="meta">Scanner · Mani's Channel</p>
-        <label class="field">Display name
+        <label class="field">Channel name
           <input placeholder="F&amp;O">
         </label>
         <div class="segments" role="group" aria-label="New channel segment">
@@ -299,6 +314,10 @@
       <article class="offer">
         <h3>Equity</h3>
         <p class="meta">Mani's Channel · sample until a feed is saved</p>
+        <label class="field">Channel name
+          <input value="Equity">
+        </label>
+        <p class="fine">This is the name on the scanner card and on Home. Save channel stores it.</p>
         <p class="meta">Feed</p>
         <div class="segments" role="group" aria-label="Equity feed">
           <button type="button" data-action="admin-kind" data-admin-kind="none">Sample</button>
@@ -306,7 +325,7 @@
           <button type="button" data-action="admin-kind" data-admin-kind="http">HTTP</button>
         </div>
         <div data-admin-fields hidden>
-          <label class="field">Channel name
+          <label class="field">Telegram channel
             <input data-admin-channel placeholder="Equity Premium SEBI Reg">
           </label>
           <p class="fine">Find channel looks up the id from the chats this worker's login has already joined. The id is what gets saved.</p>
@@ -1033,10 +1052,46 @@
     state.errors[key] = message;
   }
 
+  function shownTargets(targets) {
+    if (!targets || !targets.length) return [];
+    if (targets.length === 1) return [{ label: "Last", price: targets[0][1] }];
+    return targets.map(function (target, index) {
+      return { label: index === targets.length - 1 ? "Last" : "T" + (index + 1), price: target[1] };
+    });
+  }
   function priceClosed(signal) {
-    return signal.mark && (signal.mark.code === "not_valid" || signal.mark.code === "final" || signal.mark.code === "stop");
+    var code = signal.mark && signal.mark.code;
+    if (code === "not_valid" || code === "final" || code === "stop" || code === "caution" || code === "t1_trail" || code === "t2_trail" || code === "trail") return true;
+    if (signal.segment !== "Equity" || signal.ltp == null || !signal.targets || !signal.targets.length) return false;
+    var first = signal.targets[0][1];
+    if (signal.side === "SELL") return signal.ltp >= signal.stop || signal.ltp <= first;
+    return signal.ltp <= signal.stop || signal.ltp >= first;
+  }
+  function liveHit(signal) {
+    if (signal.segment !== "Equity" || signal.ltp == null || !signal.targets || !signal.targets.length) return null;
+    var targets = signal.targets.map(function (item) { return item[1]; });
+    var hit = -1;
+    if (signal.side === "SELL") {
+      if (signal.ltp >= signal.stop) return { code: "stop", label: "Stop", title: "The last price has traded through the stop. This call is not an entry until a fresh call." };
+      targets.forEach(function (target, index) { if (signal.ltp <= target) hit = index; });
+    } else {
+      if (signal.ltp <= signal.stop) return { code: "stop", label: "Stop", title: "The last price has traded through the stop. This call is not an entry until a fresh call." };
+      targets.forEach(function (target, index) { if (signal.ltp >= target) hit = index; });
+    }
+    if (hit < 0) return null;
+    if (hit === targets.length - 1) return { code: "final", label: "Final", title: "The last price has traded through the last target. This call is not an entry until a fresh call." };
+    var label = hit === 0 ? "T1 trail" : hit === 1 ? "T2 trail" : "T" + (hit + 1) + " trail";
+    var code = hit === 0 ? "t1_trail" : hit === 1 ? "t2_trail" : "trail";
+    return { code: code, label: label, title: "The last price has traded through " + label.split(" ")[0] + ". A later target remains. This call is not an entry until a fresh call." };
   }
   function guideMark(signal, status) {
+    var closed = signal.mark && (signal.mark.code === "not_valid" || signal.mark.code === "final" || signal.mark.code === "stop" || signal.mark.code === "caution" || signal.mark.code === "t1_trail" || signal.mark.code === "t2_trail" || signal.mark.code === "trail");
+    var hit = closed ? null : liveHit(signal);
+    if (hit && status !== "expired" && status !== "stale" && status !== "unmatched" && status !== "ambiguous") {
+      var live = el("span", "guide guide-" + hit.code, hit.label);
+      live.title = hit.title;
+      return live;
+    }
     if (signal.mark && status !== "expired" && status !== "stale" && status !== "unmatched" && status !== "ambiguous") {
       var marked = el("span", "guide guide-" + signal.mark.code, signal.mark.label);
       marked.title = signal.mark.title;
@@ -1173,7 +1228,7 @@
         meta.appendChild(ltpBits(signal));
         meta.appendChild(document.createTextNode(" · "));
       }
-      meta.appendChild(document.createTextNode("Trigger " + price(signal.trigger)));
+      meta.appendChild(document.createTextNode("Trigger " + price(signal.trigger) + " · Stop " + price(signal.stop) + shownTargets(signal.targets).map(function (target) { return " · " + target.label + " " + price(target.price); }).join("")));
       button.appendChild(meta);
       var quoted = quote(signal);
       var qty = el("span", "qty");
@@ -1364,6 +1419,12 @@
       host.appendChild(el("p", "meta", "Proposed · " + state.product));
       host.appendChild(el("p", "meta", "Trigger " + state.draft.trigger + " · Stop " + state.draft.stop));
       host.appendChild(el("p", "fine", "Saved. Zerodha was not sent this order. The stop and targets stay inactive until Zerodha confirms them."));
+      var removeOrder = document.createElement("button");
+      removeOrder.type = "button";
+      removeOrder.className = "ghost";
+      removeOrder.setAttribute("data-action", "delete-order");
+      removeOrder.textContent = "Delete saved order";
+      host.appendChild(removeOrder);
     });
     var current = state.screen === "detail" ? "home" : state.screen;
     root.querySelectorAll("[data-go]").forEach(function (button) {
@@ -1466,11 +1527,17 @@
       if (state.channel !== "all" && signal.channel !== state.channel) return false;
       return derived(signal) !== "active" || priceClosed(signal);
     }).length;
+    var actionable = signals.filter(function (signal) {
+      if (!channelOpen(signal.channel)) return false;
+      if (state.channel !== "all" && signal.channel !== state.channel) return false;
+      return derived(signal) === "active" && !priceClosed(signal);
+    }).length;
     root.querySelectorAll("[data-action='call-view']").forEach(function (button) {
       var allSide = button.getAttribute("data-view") === "all";
       var selected = allSide === state.includeClosed;
       button.setAttribute("aria-pressed", selected ? "true" : "false");
       if (allSide) button.textContent = closed === 0 ? "All" : "All · " + closed;
+      else button.textContent = "Actionable · " + actionable;
     });
     root.querySelectorAll("[data-broker-line]").forEach(function (node) {
       node.textContent = state.broker === "connected" ? "Zerodha connected" : "Zerodha sign-in needed";
@@ -1578,6 +1645,9 @@
       if (!state.registered[channelKey] && state.channel === channelKey) state.channel = "all";
     } else if (action === "call-view") {
       state.includeClosed = button.getAttribute("data-view") === "all";
+    } else if (action === "delete-order") {
+      state.confirmed = "";
+      state.draft = null;
     } else if (action === "open-signal") {
       state.selected = button.getAttribute("data-symbol");
       state.product = "MIS";

@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.core.database import utcnow
 from app.core.errors import AppError
 from app.modules.audit.service import record
-from app.modules.feeds.equity_parser import parse_equity_call
+from app.modules.feeds.equity_parser import continue_equity_call, parse_equity_call
 from app.modules.feeds.models import SourceFeed
 from app.modules.feeds.normalize import external_ref_for, to_signal
 from app.modules.feeds.options import validate_feed_options
@@ -21,6 +21,9 @@ from app.modules.scanners.models import Scanner, SourceChannel
 from app.modules.signals.service import IngestOutcome, ingest
 
 logger = logging.getLogger("quantivo.feeds")
+
+# The next Telegram message can complete a call only when it is posted immediately after.
+_FOLLOW_UP = timedelta(minutes=10)
 
 
 @dataclass(frozen=True)
@@ -188,12 +191,26 @@ def poll_telegram_feeds(
         channel_ref = str(options["channel_id"])
         if feed.history_synced_at is None and fetch_history is not None:
             tally = {"created": 0, "unchanged": 0, "revised": 0, "skipped": 0}
+            carried: list[ChannelPost] = []
 
             def take(batch: list[ChannelPost]) -> None:
-                _count_posts(db, channel, batch, tally)
+                # History arrives newest first. Keep the oldest post so the next
+                # older batch can still see the message posted immediately after it.
+                context_ids = {item.message_id for item in carried}
+                _count_posts(
+                    db,
+                    channel,
+                    [*batch, *carried],
+                    tally,
+                    context_ids=context_ids,
+                )
+                carried.clear()
+                if batch:
+                    carried.append(min(batch, key=lambda item: item.message_id))
                 db.commit()
                 logger.info(
-                    "telegram history batch channel=%s created=%s unchanged=%s revised=%s skipped=%s",
+                    "telegram history batch channel=%s created=%s unchanged=%s "
+                    "revised=%s skipped=%s",
                     channel.code,
                     tally["created"],
                     tally["unchanged"],
@@ -223,9 +240,21 @@ def _count_posts(
     channel: SourceChannel,
     posts: list[ChannelPost],
     tally: dict,
+    context_ids: set[int] | None = None,
 ) -> None:
-    for post in posts:
-        outcome = _ingest_post(db, channel, post)
+    context = context_ids or set()
+    ordered = sorted(posts, key=lambda post: post.message_id)
+    used_follow_up: set[int] = set()
+    for index, post in enumerate(ordered):
+        if post.message_id in context:
+            continue
+        if post.message_id in used_follow_up:
+            tally["skipped"] += 1
+            continue
+        follow_up = ordered[index + 1] if index + 1 < len(ordered) else None
+        outcome, consumed = _ingest_post(db, channel, post, follow_up)
+        if consumed and follow_up is not None:
+            used_follow_up.add(follow_up.message_id)
         if outcome is None:
             tally["skipped"] += 1
         elif outcome is IngestOutcome.CREATED:
@@ -236,18 +265,52 @@ def _count_posts(
             tally["unchanged"] += 1
 
 
-def _ingest_post(db: Session, channel: SourceChannel, post: ChannelPost) -> IngestOutcome | None:
+def _ingest_post(
+    db: Session,
+    channel: SourceChannel,
+    post: ChannelPost,
+    follow_up: ChannelPost | None = None,
+) -> tuple[IngestOutcome | None, bool]:
     if not in_equity_window(post.sent_at):
-        return None
+        return None, False
     parsed = parse_equity_call(post.text)
+    consumed = False
     if parsed is None:
-        return None
+        nxt = _immediate_follow_up(post, follow_up)
+        if nxt is not None:
+            parsed = continue_equity_call(post.text, nxt.text)
+            consumed = parsed is not None
+    if parsed is None:
+        return None, False
     try:
         ref = external_ref_for(post.channel_id, post.message_id)
     except ValueError:
-        return None
+        return None, False
     draft = to_signal(parsed, channel=channel, external_ref=ref, published_at=post.sent_at)
-    return ingest(db, scanner_id=channel.scanner_id, draft=draft, correlation_id="feed-worker")
+    outcome = ingest(
+        db,
+        scanner_id=channel.scanner_id,
+        draft=draft,
+        correlation_id="feed-worker",
+    )
+    return outcome, consumed
+
+
+def _immediate_follow_up(post: ChannelPost, follow_up: ChannelPost | None) -> ChannelPost | None:
+    if follow_up is None or follow_up.channel_id != post.channel_id:
+        return None
+    if follow_up.message_id != post.message_id + 1:
+        return None
+    gap = _aware(follow_up.sent_at) - _aware(post.sent_at)
+    if gap < timedelta(0) or gap > _FOLLOW_UP:
+        return None
+    return follow_up
+
+
+def _aware(moment: datetime) -> datetime:
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment
 
 
 def _audit_payload(channel: SourceChannel, kind: str, status: str, options: dict) -> dict:

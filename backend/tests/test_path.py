@@ -51,6 +51,17 @@ def test_caution_when_the_stop_is_touched_before_a_close_through():
     assert mark.at == datetime(2026, 10, 23, 10, 2, tzinfo=IST)
 
 
+def test_a_stop_touch_before_a_later_close_is_not_an_entry():
+    bars = [
+        _bar(2, "122", "119.5", "121"),
+        _bar(8, "124", "122", "123.4"),
+    ]
+    mark = _assess(bars, now_minute=20)
+    assert mark is not None
+    assert mark.code == "caution"
+    assert mark.at == datetime(2026, 10, 23, 10, 2, tzinfo=IST)
+
+
 def test_not_valid_when_the_window_ends_with_no_close_through():
     mark = _assess([_bar(5, "122.5", "121", "122")], now_minute=40)
     assert mark is not None

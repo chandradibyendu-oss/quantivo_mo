@@ -6,7 +6,7 @@ Add the next rule as a new section. Keep the case list, the flowchart, and the m
 
 ## Call progress
 
-Entry, Caution, Not valid, T1 trail, T2 trail, Final, and Stop are the price marks. Each one that has a minute shows that minute on the chip, in IST. The entry minute is when the one-minute candle closed. A stop or target minute is the minute of the bar that traded there. The bars are read for an actionable NSE cash call when the Fyers app is saved. They stay in process memory. They are not a column on the signal. The stock list labels the last traded price LTP while the cash session is open and Last LTP after it. The price is green when it is above the previous close and red when it is below, with that percent beside it. A price without the change stays in the body ink. A chart icon on the list and on the call draws those bars at 1 minute and 5 minutes. The horizontal axis shows the bar time in IST. The price scale is on the right and the chart opens on the latest candle. Dragging the chart moves through the session. Dragging the price scale changes the candle height. Dragging the time scale, or the wheel, fits more candles in the view. The crosshair shows that bar's time and price. Until those bars are in, the chip stays Waiting or Window over, and it does not invent a time.
+Entry, Caution, Not valid, T1 trail, T2 trail, Final, and Stop are the price marks. Each one that has a minute shows that minute on the chip, in IST. The entry minute is when the one-minute candle closed. A stop or target minute is the minute of the bar that traded there. The bars are read for an actionable NSE cash call when the Fyers app is saved. Finished minutes are saved for that symbol. They are not a column on the signal. A day already saved is not read again. The minute still forming stays in memory and is filled from the data socket. A finished mark is not read again. The stock list labels the last traded price LTP while the cash session is open and Last LTP after it. The price is green when it is above the previous close and red when it is below, with that percent beside it. A price without the change stays in the body ink. A chart icon on the list and on the call draws those bars at 1 minute and 5 minutes. The horizontal axis shows the bar time in IST. The price scale is on the right and the chart opens on the latest candle. Dragging the chart moves through the session. Dragging the price scale changes the candle height. Dragging the time scale, or the wheel, fits more candles in the view. The crosshair shows that bar's time and price. Until those bars are in, the chip stays Waiting or Window over, and it does not invent a time.
 
 This path is for a buy call whose message gives an above price, a stop, and at least one target. "Above price" is the trigger. A one-minute candle **close** above that price is the entry. A wick, or the last traded price alone, is not an entry. A stop or a target is a **touch**. The entry window is the one already used on the phone: 30 minutes after the post, or 15:30 IST, whichever is sooner. On a weekend the window is already over at the post time.
 
@@ -64,7 +64,7 @@ flowchart TD
   afterEntry -->|None of these| entered[Entry]
 ```
 
-Waiting and Caution can still move to Entry if a one-minute candle closes above the trigger before the window ends. Caution does not become Not valid because the stop was touched. Not valid, Final, and Stop do not move back.
+Waiting and Caution can still move to Entry only while the stop has not been touched. A stop touch before a one-minute close through the trigger is Caution, and that call does not become Entry. Caution, a trail, Not valid, Final, and Stop leave Actionable and are not an entry. A fresh call is required. While the one-minute bars are still being read, a last price that has already traded through a target or the stop leaves Actionable. The pill says Final, T1 trail, T2 trail, or Stop, with no minute, until the bars name that minute.
 
 ### Marks on the row
 
@@ -77,12 +77,12 @@ The time is the minute in IST. A mark from an earlier day includes the date, as 
 | Waiting | Green | The window is open. No one-minute close through the trigger is recorded. | Stays |
 | Entry 10:05 | Green, deeper than Waiting | A one-minute candle closed through the trigger inside the window. The time is the minute that candle closed. | Stays |
 | Final 11:40 | Green | The last target was touched in that minute. That is the exit. | Leaves. All still shows it |
-| T1 trail 10:31 | Green, a shade lighter | T1 was touched in that minute and a later target remains. | Stays |
-| T2 trail 12:05 | Green, a shade lighter | T2 was touched in that minute and a later target remains. A later target uses the same pill, named for that target. | Stays |
+| T1 trail 10:31 | Green, a shade lighter | T1 was touched in that minute and a later target remains. | Leaves. All still shows it. Not an entry until a fresh call |
+| T2 trail 12:05 | Green, a shade lighter | T2 was touched in that minute and a later target remains. A later target uses the same pill, named for that target. | Leaves. All still shows it. Not an entry until a fresh call |
 | Window over | Stone | The window has ended and the one-minute bars are not in yet. This is not Not valid. | Stays |
 | Checking | Stone | The one-minute bars are being read. | Stays |
 | Not valid | Stone | The window ended with no one-minute close through the trigger. There is no entry time. | Leaves. All still shows it |
-| Caution 10:14 | Amber | The window is open. The stop was touched in that minute. There is still no entry. | Stays |
+| Caution 10:14 | Amber | The stop was touched in that minute, before a one-minute close through the trigger. | Leaves. All still shows it. Not an entry until a fresh call |
 | Stale | Amber | The horizon clock has passed. | Leaves. All still shows it |
 | Stop 11:52 | Red | After entry, the stop was touched in that minute. That is the exit. | Leaves. All still shows it |
 | Expired | Warm neutral | `expires_at` is in the past. | Leaves. All still shows it |
@@ -92,7 +92,7 @@ Waiting is `#e7f6ee` with ink `#16804A`. Entry is a deeper green, `#d3eadc` with
 
 The published stop stays on the row. "Trail" says a later target remains. It does not change the stop price. A trail-price rule is not in the seven cases.
 
-Last traded price can sit on the same line as the trigger. It does not set Waiting, Entry, Caution, or Not valid.
+Last traded price can sit on the same line as the trigger, the stop, and the targets. A stop or a target on the wrong side of the buy is moved by a power of ten when the current price, or the buy, shows a missing zero or a slipped decimal. The mark is then read from the corrected level. The final target on that line is Last. T2 is shown only when a price sits between the first target and the last. The last traded price does not set Waiting, Entry, Caution, or Not valid. A last price already through a target or the stop takes that call off Actionable and the pill says Final, a trail, or Stop, with no minute, until the bars name that minute.
 
 ## Buy and Sell
 
@@ -155,7 +155,7 @@ A check that fails after the call is known writes an audit row. It does not writ
 | Scanner | The channel is not registered | The screen says so and lists no calls | None |
 | Scanner | A segment filter is on | The list changes. Access does not | None |
 | Call | The call is unmatched, stale, or expired | Buy and Sell stay off | None |
-| Call | The mark is Not valid, Final, or Stop | Buy and Sell stay off | None |
+| Call | The mark is Not valid, Caution, a trail, Final, or Stop, or the last price has traded through the first target or the stop | Buy and Sell stay off | None |
 | Call | One lot would lose more than the maximum rupee risk | Quantity is none. Buy and Sell stay off | None |
 | Ticket | The trader edits the trigger or the stop | Quantity is recalculated. The ticket stays open | None. Preview writes nothing |
 | Confirm | The call is no longer executable | 409 `signal_not_actionable` | Audit only |

@@ -33,8 +33,6 @@ _SYMBOL = re.compile(r"^[A-Z0-9&-]+$")
 _LOCK = threading.Lock()
 _SERIES: dict[str, str] | None = None
 _CACHE: dict[str, tuple[datetime, QuotePrint | None]] = {}
-_PAUSED_UNTIL: datetime | None = None
-_PAUSE = timedelta(minutes=15)
 
 
 class QuoteRateLimit(Exception):
@@ -44,21 +42,23 @@ QuoteSource = Literal["fyers", "unconfigured", "unavailable"]
 
 
 def clear_quote_cache() -> None:
-    global _PAUSED_UNTIL
     with _LOCK:
         _CACHE.clear()
-        _PAUSED_UNTIL = None
+    from app.modules.quotes.budget import clear_data_budget
+
+    clear_data_budget()
 
 
 def quotes_paused(moment: datetime) -> bool:
-    with _LOCK:
-        return _PAUSED_UNTIL is not None and moment < _PAUSED_UNTIL
+    from app.modules.quotes.budget import data_paused
+
+    return data_paused(moment)
 
 
 def pause_quotes(moment: datetime) -> None:
-    global _PAUSED_UNTIL
-    with _LOCK:
-        _PAUSED_UNTIL = moment + _PAUSE
+    from app.modules.quotes.budget import note_rate_limit
+
+    note_rate_limit(moment)
 
 
 @dataclass(frozen=True)
@@ -116,10 +116,25 @@ def read_last_prices(
     if not wanted:
         return QuoteBatch("fyers", {})
 
-    fresh, missing = _split_cache(wanted, store, moment)
-    if missing and quotes_paused(moment):
-        return QuoteBatch("unavailable", {})
+    from app.modules.quotes.budget import data_paused
+    from app.modules.quotes.live import fresh_ticks, watch_symbols
+    from app.modules.quotes.meter import maybe_log, note_hit, note_limited, note_miss
+
+    if from_settings:
+        watch_symbols(list(wanted))
+    live = fresh_ticks(wanted, moment)
+    if live:
+        note_hit()
+    rest = {code: pair for code, pair in wanted.items() if code not in live}
+    fresh, missing = _split_cache(rest, store, moment)
+    if fresh:
+        note_hit()
+    if missing and data_paused(moment):
+        note_limited()
+        maybe_log(moment, history_queue=_history_queue())
+        return _stored_batch(wanted, {**live, **fresh})
     if missing:
+        note_miss()
         fetched = _fetch(
             missing,
             resolved_id,
@@ -129,23 +144,18 @@ def read_last_prices(
             allow_refresh=from_settings,
             now=moment,
         )
+        maybe_log(moment, history_queue=_history_queue())
         if fetched is None:
-            return QuoteBatch("unavailable", {})
+            held = {**live, **fresh}
+            return _stored_batch(wanted, held)
         with _LOCK:
-            for code in missing:
-                store[code] = (moment, fetched.get(code))
-            fresh = {code: store[code][1] for code in wanted if code in store}
-
-    prices: dict[tuple[str, str], Decimal] = {}
-    changes: dict[tuple[str, str], Decimal] = {}
-    for code, pair in wanted.items():
-        printed = fresh.get(code)
-        if printed is None:
-            continue
-        prices[pair] = printed.price
-        if printed.change_percent is not None:
-            changes[pair] = printed.change_percent
-    return QuoteBatch("fyers", prices, changes)
+            for code, printed in fetched.items():
+                store[code] = (moment, printed)
+            fresh = {code: store[code][1] for code in rest if code in store}
+    else:
+        maybe_log(moment, history_queue=_history_queue())
+    fresh = {**live, **fresh}
+    return _stored_batch(wanted, fresh)
 
 
 def fyers_code(exchange: str, symbol: str, series: dict[str, str] | None = None) -> str | None:
@@ -157,6 +167,30 @@ def fyers_code(exchange: str, symbol: str, series: dict[str, str] | None = None)
         return None
     chosen = _series_for(ticker, series)
     return f"NSE:{ticker}-{chosen}"
+
+
+def _stored_batch(
+    wanted: dict[str, tuple[str, str]],
+    fresh: dict[str, QuotePrint | None],
+) -> QuoteBatch:
+    prices: dict[tuple[str, str], Decimal] = {}
+    changes: dict[tuple[str, str], Decimal] = {}
+    for code, pair in wanted.items():
+        printed = fresh.get(code)
+        if printed is None:
+            continue
+        prices[pair] = printed.price
+        if printed.change_percent is not None:
+            changes[pair] = printed.change_percent
+    if not prices:
+        return QuoteBatch("unavailable", {})
+    return QuoteBatch("fyers", prices, changes)
+
+
+def _history_queue() -> int:
+    from app.modules.progress.history import history_queue_depth
+
+    return history_queue_depth()
 
 
 def parse_fyers_quotes(body: str) -> dict[str, QuotePrint] | None:
@@ -253,18 +287,25 @@ def _fetch(
     *,
     allow_refresh: bool,
     now: datetime,
-) -> dict[str, QuotePrint] | None:
+) -> dict[str, QuotePrint | None] | None:
     send = opener or _open
-    found: dict[str, QuotePrint] = {}
+    found: dict[str, QuotePrint | None] = {}
     size = max(1, chunk_size)
+    from app.modules.quotes.budget import take_data_slot
+
     for start in range(0, len(codes), size):
+        if not take_data_slot("quotes", now):
+            from app.modules.quotes.meter import note_limited
+
+            note_limited()
+            return None if not found else found
         chunk = codes[start : start + size]
         encoded = ",".join(urllib.parse.quote(code, safe=":") for code in chunk)
         try:
             body = send(f"{FYERS_QUOTES_URL}?symbols={encoded}", f"{app_id}:{access_token}")
         except QuoteRateLimit:
             pause_quotes(now)
-            logger.warning("Fyers quotes are paused for 15 minutes after a rate limit")
+            logger.warning("Fyers quotes paused after a rate limit")
             return None
         except (OSError, ValueError):
             logger.warning("Fyers quotes could not be read")
@@ -288,6 +329,8 @@ def _fetch(
             logger.warning("Fyers quotes could not be read")
             return None
         found.update(parsed)
+        for code in chunk:
+            found.setdefault(code, None)
     return found
 
 

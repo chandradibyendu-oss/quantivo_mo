@@ -117,8 +117,8 @@ flowchart LR
 | --- | --- |
 | Telethon client, `api_id`, `api_hash`, and a user session file | Scanner adapter. It is the only code that speaks Telegram. One worker holds the session, because a Telethon session file cannot be shared by API replicas |
 | Channel post becomes a `ChannelMessage` | Provider payload. The core never sees Telegram types |
-| Parser requires a buy-above, a stop, and at least one target | Provider-specific rule inside the adapter. Posts that fail the rule are ignored and not shown as signals |
-| Stop written above the buy is corrected only for the known trailing-zero typo | Adapter normalization, before the signal is stored |
+| Parser requires a buy-above, a stop, and at least one target | Provider-specific rule inside the adapter. A missing stop or target is read from the immediate next message, the following message id within 10 minutes, and the call is stored under the first message. Any other incomplete post is ignored and not shown as a signal |
+| Stop or target on the wrong side of the buy | Moved by a power of ten when the current price, or the buy, shows a missing zero or a slipped decimal. A level already on the right side is kept. The buy is kept |
 | Company name resolved against the NSE equity list | Adapter step. `matched` becomes the signal symbol. `ambiguous` and `unmatched` stay visible and are not executable |
 | Poll every few seconds from 09:15 to 15:30 IST, and ignore posts outside that window | Adapter clock. The core still marks a stored intraday signal stale from its own window |
 | Dedup by channel id and message id | `external_ref` on the signal, unique per scanner |
@@ -126,7 +126,7 @@ flowchart LR
 | Horizon `short term` or `long term` | Timeframe `POSITIONAL`, product hint `CNC` |
 | HTTP route that only lists stored calls | The API. The Mani tab does not connect to Telegram |
 | `ManiOrderIntent` marked as not an order | Later confirm flow. This deployment still refuses live placement |
-| Last traded price and target-hit marks | A separate market-data read. The pilot feed does not depend on them |
+| Last traded price and target-hit marks | One Fyers data socket for the last price. Finished one-minute bars are saved, and a day already saved is not read again. The minute still forming is filled from that socket. A missing day is one paced History read. Both share this process's Data API budget. The pilot feed does not depend on them |
 
 Suggested quantity on the platform stays `floor(maximum rupee risk / per-share risk)`, using the parsed buy-above as the trigger and the parsed stop as the stop. The Mani desk's current share count, capital divided by buy-above, is not the order quantity. The tab may show it only as a provider-style illustration, labeled apart from the Quantivo quantity.
 

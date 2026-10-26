@@ -14,6 +14,7 @@ import type {
   FyersConfigOut,
   FyersConnectOut,
   KiteAppOut,
+  AdminOrderRow,
   MeOut,
   ScannerOut,
   TelegramLoginOut,
@@ -112,8 +113,16 @@ export default function AdminScreen() {
   const [newName, setNewName] = useState("");
   const [newSegment, setNewSegment] = useState<"equity" | "fno" | "commodity">("equity");
   const [adding, setAdding] = useState(false);
+  const [scannerDrafts, setScannerDrafts] = useState<Record<string, string>>({});
+  const [savingScanner, setSavingScanner] = useState<string | null>(null);
+  const [scannerNote, setScannerNote] = useState<{ id: string; text: string; error: boolean } | null>(null);
   const [added, setAdded] = useState<string | null>(null);
   const [warning, setWarning] = useState<{ channelId: string; kind: "stop" | "delete" } | null>(null);
+  const [orders, setOrders] = useState<AdminOrderRow[]>([]);
+  const [orderTarget, setOrderTarget] = useState<AdminOrderRow | null>(null);
+  const [orderBusy, setOrderBusy] = useState(false);
+  const [orderNote, setOrderNote] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState(false);
 
   const load = useCallback(async () => {
     const profile = await api<MeOut>("/api/v1/me");
@@ -121,13 +130,14 @@ export default function AdminScreen() {
       router.replace("/signals");
       return;
     }
-    const [nextLogin, nextFyers, nextKite, nextClocks, nextFeeds, catalogue] = await Promise.all([
+    const [nextLogin, nextFyers, nextKite, nextClocks, nextFeeds, catalogue, nextOrders] = await Promise.all([
       api<TelegramLoginOut>("/api/v1/admin/telegram-login"),
       api<FyersConfigOut>("/api/v1/admin/fyers"),
       api<KiteAppOut>("/api/v1/admin/zerodha"),
       api<CallClocksOut>("/api/v1/admin/call-clocks"),
       api<FeedOut[]>("/api/v1/admin/source-channels"),
       api<ScannerOut[]>("/api/v1/scanners"),
+      api<AdminOrderRow[]>("/api/v1/admin/orders"),
     ]);
     setLogin(nextLogin);
     applyFyers(nextFyers);
@@ -137,7 +147,17 @@ export default function AdminScreen() {
     setShortDays(String(nextClocks.short_term_days));
     setLongDays(String(nextClocks.long_term_days));
     setFeeds(nextFeeds);
+    setOrders(nextOrders);
     setScanners(catalogue);
+    setScannerDrafts((current) => {
+      const next = { ...current };
+      for (const scanner of catalogue) {
+        if (next[scanner.id] === undefined) {
+          next[scanner.id] = scanner.name;
+        }
+      }
+      return next;
+    });
     setChannelScannerId((current) => current || catalogue[0]?.id || "");
     setDrafts((current) => {
       const next = { ...current };
@@ -174,6 +194,23 @@ export default function AdminScreen() {
       };
     }, [load, ready, userId]),
   );
+
+  async function removeOrder(order: AdminOrderRow) {
+    setOrderBusy(true);
+    setOrderNote(null);
+    setOrderError(false);
+    try {
+      await api(`/api/v1/admin/orders/${order.id}`, { method: "DELETE" });
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+      setOrderTarget(null);
+      setOrderNote(`Removed the saved ${order.side === "BUY" ? "buy" : "sell"} of ${order.symbol}. The call stays.`);
+    } catch (caught) {
+      setOrderError(true);
+      setOrderNote(caught instanceof ApiRequestError ? caught.message : "The saved order could not be removed.");
+    } finally {
+      setOrderBusy(false);
+    }
+  }
 
   function update(channelId: string, patch: Partial<Draft>) {
     setDrafts((current) => ({ ...current, [channelId]: { ...current[channelId], ...patch } }));
@@ -437,6 +474,40 @@ export default function AdminScreen() {
       setFyersNote(caught instanceof ApiRequestError ? caught.message : "The Fyers app could not be removed.");
     } finally {
       setFyersSaving(false);
+    }
+  }
+
+  async function saveScanner(scanner: ScannerOut) {
+    const named = (scannerDrafts[scanner.id] ?? scanner.name).trim();
+    if (!named) {
+      setScannerNote({ id: scanner.id, text: "Enter a scanner name.", error: true });
+      return;
+    }
+    setSavingScanner(scanner.id);
+    setScannerNote(null);
+    try {
+      const saved = await api<{ id: string; name: string; provider_name: string }>(
+        `/api/v1/admin/scanners/${scanner.id}`,
+        { method: "PUT", body: JSON.stringify({ name: named }) },
+      );
+      setScanners((current) =>
+        current.map((item) => (item.id === saved.id ? { ...item, name: saved.name } : item)),
+      );
+      setFeeds((current) =>
+        current.map((feed) =>
+          feed.scanner_id === saved.id ? { ...feed, scanner_name: saved.name } : feed,
+        ),
+      );
+      setScannerDrafts((current) => ({ ...current, [saved.id]: saved.name }));
+      setScannerNote({ id: saved.id, text: `${saved.name} saved.`, error: false });
+    } catch (caught) {
+      setScannerNote({
+        id: scanner.id,
+        text: caught instanceof ApiRequestError ? caught.message : "The scanner could not be saved.",
+        error: true,
+      });
+    } finally {
+      setSavingScanner(null);
     }
   }
 
@@ -755,6 +826,43 @@ export default function AdminScreen() {
             <Text style={[ui.meta, { color: kiteError ? colors.danger : colors.accent, marginTop: 12 }]}>{kiteNote}</Text>
           ) : null}
         </View>
+        <Text style={ui.section}>Saved orders</Text>
+        <View style={ui.card}>
+          <Text style={ui.meta}>
+            These are proposed orders that were not sent to Zerodha. Deleting one removes that saved intent. The call stays.
+          </Text>
+          {orders.length === 0 ? <Text style={[ui.lead, { marginTop: 12 }]}>No saved orders.</Text> : null}
+          {orders.map((order) =>
+            orderTarget?.id === order.id ? (
+              <Warning
+                key={order.id}
+                title={`Delete the saved ${order.side === "BUY" ? "buy" : "sell"} of ${order.symbol}?`}
+                body={`${order.product} · quantity ${order.quantity} · trigger ${order.trigger_price}. Zerodha was not sent this order. The call stays. This cannot be undone.`}
+                confirmLabel={`Delete ${order.symbol}`}
+                cancelLabel="Keep this order"
+                busy={orderBusy}
+                onCancel={() => setOrderTarget(null)}
+                onConfirm={() => void removeOrder(order)}
+              />
+            ) : (
+              <View key={order.id} style={{ marginTop: 12 }}>
+                <Text style={ui.rowTitle}>
+                  {order.symbol} {order.side} · {order.product}
+                </Text>
+                <Text style={ui.meta}>
+                  Quantity {order.quantity} · trigger {order.trigger_price} · stop {order.stop_loss}
+                </Text>
+                <Text style={ui.meta}>{order.phone_e164} · Proposed</Text>
+                <Pressable style={ui.ghost} disabled={orderBusy} onPress={() => setOrderTarget(order)}>
+                  <Text style={[ui.ghostText, { color: colors.danger }]}>Delete saved order</Text>
+                </Pressable>
+              </View>
+            ),
+          )}
+          {orderNote ? (
+            <Text style={[ui.meta, { color: orderError ? colors.danger : colors.accent, marginTop: 12 }]}>{orderNote}</Text>
+          ) : null}
+        </View>
         <Text style={ui.section}>Scanners</Text>
         <View style={ui.card}>
           <Text style={ui.rowTitle}>Add a scanner</Text>
@@ -783,6 +891,32 @@ export default function AdminScreen() {
             <Text style={ui.primaryText}>{adding ? "Adding…" : "Add scanner"}</Text>
           </Pressable>
         </View>
+        {scanners.map((scanner) => (
+          <View key={scanner.id} style={ui.card}>
+            <Text style={ui.rowTitle}>{scanner.provider_name}</Text>
+            <Text style={ui.meta}>The scanner name is what traders open.</Text>
+            <Text style={[ui.label, { marginTop: 12 }]}>Scanner name</Text>
+            <TextInput
+              style={ui.input}
+              value={scannerDrafts[scanner.id] ?? scanner.name}
+              onChangeText={(value) =>
+                setScannerDrafts((current) => ({ ...current, [scanner.id]: value }))
+              }
+            />
+            <Pressable
+              style={ui.primary}
+              disabled={savingScanner === scanner.id}
+              onPress={() => saveScanner(scanner)}
+            >
+              <Text style={ui.primaryText}>{savingScanner === scanner.id ? "Saving…" : "Save scanner"}</Text>
+            </Pressable>
+            {scannerNote?.id === scanner.id ? (
+              <Text style={[ui.meta, { color: scannerNote.error ? colors.danger : colors.accent, marginTop: 12 }]}>
+                {scannerNote.text}
+              </Text>
+            ) : null}
+          </View>
+        ))}
         <Text style={ui.section}>Channels</Text>
         <View style={ui.card}>
           <Text style={ui.rowTitle}>Add a channel</Text>
@@ -798,7 +932,7 @@ export default function AdminScreen() {
               />
             ))}
           </ScrollView>
-          <Text style={[ui.label, { marginTop: 12 }]}>Display name</Text>
+          <Text style={[ui.label, { marginTop: 12 }]}>Channel name</Text>
           <TextInput
             style={ui.input}
             value={newName}
@@ -934,7 +1068,7 @@ function ChannelCard({
       <Text style={ui.meta}>
         {feed.scanner_name} · {feed.reader.detail}
       </Text>
-      <Text style={[ui.label, { marginTop: 12 }]}>Display name</Text>
+      <Text style={[ui.label, { marginTop: 12 }]}>Channel name</Text>
       <TextInput
         style={ui.input}
         value={draft.displayName}
@@ -1083,7 +1217,7 @@ function ChannelNameField({
 
   return (
     <>
-      <Text style={ui.label}>Channel name</Text>
+      <Text style={ui.label}>Telegram channel</Text>
       <TextInput
         style={ui.input}
         value={draft.channelName}

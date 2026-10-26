@@ -14,6 +14,7 @@ from app.modules.identity.models import (
 )
 from app.modules.notifications.models import Notification
 from app.modules.orders.models import BrokerOrder, OrderIntent, TradeExecution
+from app.modules.progress.models import MinuteBar, MinuteBarDay
 from app.modules.risk.models import RiskProfile
 from app.modules.scanners.models import ChannelRegistration, Scanner, ScannerProvider, SourceChannel
 from app.modules.signals.models import CallClock, Signal
@@ -30,6 +31,8 @@ __all__ = [
     "CallClock",
     "BrokerConnection",
     "BrokerOrder",
+    "MinuteBar",
+    "MinuteBarDay",
     "Notification",
     "OrderIntent",
     "OtpChallenge",

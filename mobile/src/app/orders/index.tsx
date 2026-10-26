@@ -1,11 +1,11 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
 import { useAuth } from "@/auth";
 import { AppShell } from "@/shell";
-import type { OrderBookRow } from "@/types";
+import type { MeOut, OrderBookRow } from "@/types";
 import { colors, ui } from "@/ui";
 
 function savedOn(value: string): string {
@@ -28,11 +28,30 @@ function statusLabel(status: string): string {
 export default function OrdersScreen() {
   const { userId, ready } = useAuth();
   const [rows, setRows] = useState<OrderBookRow[] | null>(null);
+  const [operator, setOperator] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setRows(await api<OrderBookRow[]>("/api/v1/orders"));
+    const [book, me] = await Promise.all([api<OrderBookRow[]>("/api/v1/orders"), api<MeOut>("/api/v1/me")]);
+    setRows(book);
+    setOperator(me.roles.includes("admin"));
   }, []);
+
+  async function remove(row: OrderBookRow) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/admin/orders/${row.id}`, { method: "DELETE" });
+      setRows((current) => (current ?? []).filter((item) => item.id !== row.id));
+      setPendingId(null);
+    } catch (caught) {
+      setError(caught instanceof ApiRequestError ? caught.message : "The saved order could not be removed.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -65,23 +84,44 @@ export default function OrdersScreen() {
         {error ? <Text style={ui.error}>{error}</Text> : null}
         {rows && rows.length === 0 ? <Text style={[ui.meta, { marginTop: 16 }]}>No saved orders.</Text> : null}
         {rows?.map((row) => (
-          <Pressable
-            key={row.id}
-            style={[ui.card, { marginTop: 12 }]}
-            onPress={() => router.push(`/signals/${row.signal_id}`)}
-          >
-            <Text style={ui.rowTitle}>
-              {row.symbol} · {row.side === "BUY" ? "Buy" : "Sell"}
-            </Text>
-            <Text style={ui.meta}>
-              {statusLabel(row.status)} · {row.product} · {row.quantity}
-            </Text>
-            <Text style={ui.meta}>
-              Trigger {row.trigger_price} · Stop {row.stop_loss}
-            </Text>
-            <Text style={ui.meta}>{savedOn(row.saved_at)} IST</Text>
-            <Text style={[ui.meta, { color: colors.ink, marginTop: 6 }]}>{row.message}</Text>
-          </Pressable>
+          <View key={row.id} style={[ui.card, { marginTop: 12 }]}>
+            <Pressable onPress={() => router.push(`/signals/${row.signal_id}`)}>
+              <Text style={ui.rowTitle}>
+                {row.symbol} · {row.side === "BUY" ? "Buy" : "Sell"}
+              </Text>
+              <Text style={ui.meta}>
+                {statusLabel(row.status)} · {row.product} · {row.quantity}
+              </Text>
+              <Text style={ui.meta}>
+                Trigger {row.trigger_price} · Stop {row.stop_loss}
+              </Text>
+              <Text style={ui.meta}>{savedOn(row.saved_at)} IST</Text>
+              <Text style={[ui.meta, { color: colors.ink, marginTop: 6 }]}>{row.message}</Text>
+            </Pressable>
+            {operator && row.status === "proposed" && !row.sent_to_broker ? (
+              pendingId === row.id ? (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={[ui.meta, { color: colors.ink }]}>
+                    Delete this saved {row.side === "BUY" ? "buy" : "sell"}? Zerodha was not sent it. The call stays.
+                  </Text>
+                  <Pressable
+                    style={[ui.primary, { backgroundColor: colors.danger, marginTop: 10 }]}
+                    disabled={busy}
+                    onPress={() => void remove(row)}
+                  >
+                    <Text style={ui.primaryText}>{busy ? "Removing…" : `Delete ${row.symbol}`}</Text>
+                  </Pressable>
+                  <Pressable style={ui.ghost} disabled={busy} onPress={() => setPendingId(null)}>
+                    <Text style={ui.ghostText}>Keep this order</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable style={ui.ghost} disabled={busy} onPress={() => setPendingId(row.id)}>
+                  <Text style={[ui.ghostText, { color: colors.danger }]}>Delete saved order</Text>
+                </Pressable>
+              )
+            ) : null}
+          </View>
         ))}
       </ScrollView>
     </AppShell>

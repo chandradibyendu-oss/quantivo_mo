@@ -120,6 +120,39 @@ def create_scanner(
     return scanner, provider
 
 
+def rename_scanner(
+    db: Session,
+    *,
+    scanner_id: UUID,
+    name: str,
+    actor_user_id: UUID,
+    correlation_id: str | None,
+) -> tuple[Scanner, ScannerProvider]:
+    cleaned = " ".join(name.split())
+    if not cleaned or len(cleaned) > 120:
+        raise AppError(422, "invalid_scanner", "Enter a scanner name.")
+    scanner = db.get(Scanner, scanner_id)
+    if scanner is None or scanner.status != "active":
+        raise AppError(404, "scanner_not_found", "That scanner is not in the catalogue.")
+    provider = db.get(ScannerProvider, scanner.provider_id)
+    if provider is None:
+        raise AppError(404, "scanner_not_found", "That scanner is not in the catalogue.")
+    generated = f"{scanner.name} from {provider.name}. Channels are added separately."
+    if scanner.description == generated:
+        scanner.description = f"{cleaned} from {provider.name}. Channels are added separately."
+    scanner.name = cleaned
+    record(
+        db,
+        action="scanner.renamed",
+        entity_type="scanner",
+        entity_id=scanner.id,
+        payload={"scanner_code": scanner.code, "name": cleaned},
+        actor_user_id=actor_user_id,
+        correlation_id=correlation_id,
+    )
+    return scanner, provider
+
+
 def create_source_channel(
     db: Session,
     *,

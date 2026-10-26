@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "
 
 import { api, ApiRequestError } from "@/api";
 import { quoteTone } from "@/quote";
+import { shownTargets } from "@/targets";
 import { useAuth } from "@/auth";
 import { GuideMark } from "@/guide";
 import { ChartMark } from "@/marks";
@@ -310,6 +311,11 @@ export default function SignalListScreen() {
     setShown(PAGE);
   }
   const allRows = feed && channels.length > 0 && !feed.registration_required ? feed.signals : [];
+  const actionableCount = feed
+    ? view === "actionable"
+      ? feed.signals.length
+      : Math.max(0, feed.signals.length - feed.hidden_non_actionable)
+    : 0;
   const rows = allRows.slice(0, shownFor === listKey ? shown : PAGE);
 
   return (
@@ -379,11 +385,15 @@ export default function SignalListScreen() {
                 <View style={ui.viewBar} accessibilityRole="tablist">
                   <Pressable
                     accessibilityRole="button"
+                    accessibilityLabel={`Actionable calls, ${actionableCount}`}
                     accessibilityState={{ selected: view === "actionable" }}
                     style={[ui.viewSegment, view === "actionable" ? ui.viewSegmentOn : null]}
                     onPress={() => chooseView("actionable")}
                   >
-                    <Text style={view === "actionable" ? ui.viewTextOn : ui.viewText}>Actionable</Text>
+                    <Text style={view === "actionable" ? ui.viewTextOn : ui.viewText}>
+                      Actionable
+                      <Text style={ui.viewCount}> · {actionableCount.toLocaleString("en-IN")}</Text>
+                    </Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -521,6 +531,9 @@ function SignalRow({ signal }: { signal: SignalCard }) {
               </Text>
             ) : null}
             Trigger {signal.provider_values.trigger_price} · Stop {signal.provider_values.stop_loss}
+            {shownTargets(signal.provider_values.targets)
+              .map((target) => ` · ${target.label} ${target.price}`)
+              .join("")}
           </Text>
         </Pressable>
       </Link>

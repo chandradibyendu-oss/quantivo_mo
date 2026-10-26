@@ -4,7 +4,7 @@ from decimal import Decimal
 from app.grant_admin import grant_admin_role
 from app.modules.audit.models import AuditEvent
 from app.modules.feeds.equity_directory import EquityDirectory, EquityRecord
-from app.modules.feeds.equity_parser import parse_equity_call, realistic_stop
+from app.modules.feeds.equity_parser import continue_equity_call, parse_equity_call, realistic_stop
 from app.modules.feeds.normalize import _expires_at, rematch_channel_names
 from app.modules.feeds.service import ChannelPost, poll_telegram_feeds
 from app.modules.scanners.models import SourceChannel
@@ -54,6 +54,61 @@ def test_parser_drops_a_post_without_a_target_and_corrects_a_long_stop():
     assert parse_equity_call("RELIANCE above 2450\nSL 2432\n") is None
     assert realistic_stop(Decimal("700"), Decimal("6500")) == Decimal("650")
     assert realistic_stop(Decimal("1005"), Decimal("1030")) == Decimal("1030")
+
+
+def test_a_last_target_below_the_buy_gains_the_missing_zero():
+    parsed = parse_equity_call("BUY RICOAUTO ABOVE 114\nSL 99.15\nTARGETS 120....36+")
+    assert parsed is not None
+    assert parsed.buy_above == Decimal("114")
+    assert parsed.stop_loss == Decimal("99.15")
+    assert parsed.targets == (Decimal("120"), Decimal("360"))
+    from app.modules.feeds.equity_parser import align_prices
+
+    trigger, stop, targets = align_prices(
+        "BUY",
+        Decimal("114"),
+        Decimal("99.15"),
+        [Decimal("120"), Decimal("36")],
+        Decimal("99.92"),
+    )
+    assert trigger == Decimal("114")
+    assert stop == Decimal("99.15")
+    assert targets == [Decimal("120"), Decimal("360")]
+    kept = align_prices(
+        "BUY",
+        Decimal("114"),
+        Decimal("99.15"),
+        [Decimal("120"), Decimal("360")],
+        Decimal("99.92"),
+    )
+    assert kept[2] == [Decimal("120"), Decimal("360")]
+
+
+_SG_OPENING = """INTRADAY TO 7 DAYS
+
+BUY SG MART ABOVE 806
+
+TARGETS 830....850+
+"""
+
+
+def test_the_next_message_can_supply_a_missing_stop():
+    parsed = continue_equity_call(_SG_OPENING, "SL 770")
+    assert parsed is not None
+    assert parsed.horizon_raw == "INTRADAY TO 7 DAYS"
+    assert parsed.name_raw == "SG MART"
+    assert parsed.buy_above == Decimal("806")
+    assert parsed.stop_loss == Decimal("770")
+    assert parsed.targets == (Decimal("830"), Decimal("850"))
+    assert continue_equity_call(_SG_OPENING, _POST) is None
+    assert continue_equity_call(_POST, "SL 770") is None
+    filled = continue_equity_call(
+        "INTRADAY TO 7 DAYS\nBUY SG MART ABOVE 806\nSL 770\n",
+        "TARGETS 830....850+",
+    )
+    assert filled is not None
+    assert filled.targets == (Decimal("830"), Decimal("850"))
+    assert filled.stop_loss == Decimal("770")
 
 
 def test_trader_cannot_change_feed_settings(client):
@@ -397,6 +452,100 @@ def test_telegram_feed_hides_sample_calls_and_reads_history_once(client, db):
     second = poll_telegram_feeds(db, fetch, fetch_history=fetch_history, login_ready=True)
     assert second.created == 0
     assert calls == {"history": 1, "recent": 1}
+
+
+def test_a_missing_stop_is_read_from_the_immediate_next_message(client, db):
+    session = sign_in(client, "9988776611")
+    grant_admin_role(db, "9988776611")
+    db.commit()
+    headers = bearer(session["access_token"])
+    listed = client.get("/api/v1/admin/source-channels", headers=headers)
+    channel_id = listed.json()[0]["channel_id"]
+    saved = client.put(
+        f"/api/v1/admin/source-channels/{channel_id}/feed",
+        headers=headers,
+        json={
+            "kind": "telegram",
+            "options": {"channel_id": "-1001234567890", "parser": "equity_calls"},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    sent_at = datetime(2026, 10, 26, 4, 30, tzinfo=UTC)
+    opening = "Short term\nHDFC Bank above 1650\nTargets 1700\n"
+    posts = [
+        ChannelPost("-1001234567890", 70, sent_at, _SG_OPENING),
+        ChannelPost("-1001234567890", 71, sent_at + timedelta(minutes=1), "SL 770"),
+        ChannelPost("-1001234567890", 80, sent_at + timedelta(minutes=2), opening),
+        ChannelPost("-1001234567890", 81, sent_at + timedelta(minutes=3), _POST),
+        ChannelPost("-1001234567890", 90, sent_at + timedelta(minutes=4), _SG_OPENING),
+        ChannelPost("-1001234567890", 92, sent_at + timedelta(minutes=5), "SL 770"),
+        ChannelPost("-1001234567890", 100, sent_at + timedelta(minutes=6), _SG_OPENING),
+        ChannelPost("-1001234567890", 101, sent_at + timedelta(minutes=20), "SL 770"),
+    ]
+
+    def fetch(_channel_id: str, _limit: int):
+        return posts
+
+    report = poll_telegram_feeds(db, fetch, login_ready=True)
+    assert report.created == 2
+    assert report.skipped == 6
+    db.commit()
+
+    stored = db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:70"))
+    assert stored is not None
+    assert stored.horizon_raw == "INTRADAY TO 7 DAYS"
+    assert stored.trigger_price == Decimal("806")
+    assert stored.stop_loss == Decimal("770")
+    assert stored.targets == [
+        {"label": "T1", "price": "830"},
+        {"label": "T2", "price": "850"},
+    ]
+    assert db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:71")) is None
+    reliance = db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:81"))
+    assert reliance is not None
+    assert reliance.symbol == "RELIANCE"
+    assert db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:80")) is None
+    assert db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:90")) is None
+    assert db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:100")) is None
+
+    again = poll_telegram_feeds(db, fetch, login_ready=True)
+    assert again.created == 0
+    assert again.unchanged == 2
+
+
+def test_history_joins_a_stop_that_arrived_in_the_newer_batch(client, db):
+    session = sign_in(client, "9988776612")
+    grant_admin_role(db, "9988776612")
+    db.commit()
+    headers = bearer(session["access_token"])
+    listed = client.get("/api/v1/admin/source-channels", headers=headers)
+    channel_id = listed.json()[0]["channel_id"]
+    saved = client.put(
+        f"/api/v1/admin/source-channels/{channel_id}/feed",
+        headers=headers,
+        json={
+            "kind": "telegram",
+            "options": {"channel_id": "-1001234567890", "parser": "equity_calls"},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    sent_at = datetime(2026, 10, 26, 4, 30, tzinfo=UTC)
+
+    def fetch(_channel_id: str, _limit: int):
+        return []
+
+    def fetch_history(_channel_ref: str, take) -> None:
+        take([ChannelPost("-1001234567890", 71, sent_at + timedelta(minutes=1), "SL 770")])
+        take([ChannelPost("-1001234567890", 70, sent_at, _SG_OPENING)])
+
+    report = poll_telegram_feeds(db, fetch, fetch_history=fetch_history, login_ready=True)
+    assert report.created == 1
+    assert report.skipped == 1
+    db.commit()
+    stored = db.scalar(select(Signal).where(Signal.external_ref == "-1001234567890:70"))
+    assert stored is not None
+    assert stored.stop_loss == Decimal("770")
 
 
 def test_the_channel_is_checked_every_five_seconds_while_the_window_is_open():

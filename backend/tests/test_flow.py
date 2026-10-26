@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.config import get_settings
+from app.grant_admin import grant_admin_role
+from app.modules.audit.models import AuditEvent
 from app.modules.brokers.kite import session_end
 from app.modules.brokers.kite_store import save_access_token
 from app.modules.brokers.service import record_zerodha
@@ -207,6 +209,31 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
         assert len(listed.json()) == 1
         assert listed.json()[0]["id"] == saved.json()["id"]
         assert listed.json()[0]["stop_loss"] == "2400.00"
+        order_id = saved.json()["id"]
+        blocked_delete = client.delete(f"/api/v1/admin/orders/{order_id}", headers=headers)
+        assert blocked_delete.status_code == 403
+        intent = db.get(OrderIntent, UUID(order_id))
+        assert intent is not None
+        intent.status = "cancelled"
+        db.commit()
+        grant_admin_role(db, "9876543210")
+        db.commit()
+        kept = client.delete(f"/api/v1/admin/orders/{order_id}", headers=headers)
+        assert kept.status_code == 409
+        assert kept.json()["error"]["code"] == "order_already_sent"
+        intent.status = "proposed"
+        db.commit()
+        removed = client.delete(f"/api/v1/admin/orders/{order_id}", headers=headers)
+        assert removed.status_code == 204
+        assert client.get("/api/v1/admin/orders", headers=headers).json() == []
+        assert client.get("/api/v1/orders", headers=headers).json() == []
+        missing = client.delete(f"/api/v1/admin/orders/{order_id}", headers=headers)
+        assert missing.status_code == 404
+        db.expire_all()
+        deleted = db.scalar(select(AuditEvent).where(AuditEvent.action == "order.deleted"))
+        assert deleted is not None
+        assert deleted.payload["symbol"] == "RELIANCE"
+        assert deleted.payload["status"] == "proposed"
     finally:
         for key in ("KITE_API_KEY", "KITE_API_SECRET"):
             os.environ.pop(key, None)
@@ -233,7 +260,7 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
     assert blocked.json()["error"]["code"] == "signal_not_actionable"
 
     db.rollback()
-    assert db.scalar(select(func.count()).select_from(OrderIntent)) == 1
+    assert db.scalar(select(func.count()).select_from(OrderIntent)) == 0
     assert db.scalar(select(func.count()).select_from(BrokerOrder)) == 0
     assert db.scalar(select(func.count()).select_from(PaymentTransaction)) == 0
 

@@ -12,7 +12,31 @@ from app.modules.quotes.fyers import fyers_code
 from app.modules.signals.schemas import SignalCard
 from app.modules.signals.status import entry_deadline
 
-CLOSED_MARKS = frozenset({"not_valid", "final", "stop"})
+CLOSED_MARKS = frozenset(
+    {"not_valid", "final", "stop", "caution", "t1_trail", "t2_trail", "trail"}
+)
+_QUOTE_STOP = (
+    "The last price has traded through the stop. This call is not an entry until a fresh call."
+)
+_LEVEL_HINT = {
+    "stop": _QUOTE_STOP,
+    "final": (
+        "The last price has traded through the last target. "
+        "This call is not an entry until a fresh call."
+    ),
+    "t1_trail": (
+        "The last price has traded through T1. A later target remains. "
+        "This call is not an entry until a fresh call."
+    ),
+    "t2_trail": (
+        "The last price has traded through T2. A later target remains. "
+        "This call is not an entry until a fresh call."
+    ),
+    "trail": (
+        "The last price has traded through a target. A later target remains. "
+        "This call is not an entry until a fresh call."
+    ),
+}
 
 _WORDS = {
     "waiting": "Waiting",
@@ -28,21 +52,23 @@ _WORDS = {
 _HINTS = {
     "waiting": "The window is open. No one-minute candle has closed through the trigger.",
     "caution": (
-        "The stop was touched in this minute. The window is still open, and there is no entry yet."
+        "The stop was touched in this minute. This call is not an entry until a fresh call."
     ),
     "not_valid": (
         "The window ended. No one-minute candle closed through the trigger, so there is no entry."
     ),
     "entry": "The one-minute candle closed through the trigger at this time. That is the entry.",
     "t1_trail": (
-        "T1 was touched in this minute. A later target remains. The published stop is unchanged."
+        "T1 was touched in this minute. A later target remains. "
+        "This call is not an entry until a fresh call."
     ),
     "t2_trail": (
-        "T2 was touched in this minute. A later target remains. The published stop is unchanged."
+        "T2 was touched in this minute. A later target remains. "
+        "This call is not an entry until a fresh call."
     ),
     "trail": (
         "This target was touched in this minute. A later target remains. "
-        "The published stop is unchanged."
+        "This call is not an entry until a fresh call."
     ),
     "final": "The last target was touched in this minute. That is the exit.",
     "stop": "The stop was touched in this minute after entry. That is the exit.",
@@ -52,6 +78,99 @@ _HINTS = {
     ),
 }
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def quoted_past_entry(
+    side: str,
+    price: Decimal | None,
+    stop: Decimal,
+    target: Decimal,
+) -> str | None:
+    """A last price already through the stop or the first target is not an entry."""
+
+    if price is None or price <= 0:
+        return None
+    if side == "SELL":
+        if price >= stop:
+            return "stop"
+        if price <= target:
+            return "target"
+        return None
+    if price <= stop:
+        return "stop"
+    if price >= target:
+        return "target"
+    return None
+
+
+def quoted_level(
+    side: str,
+    price: Decimal | None,
+    stop: Decimal,
+    targets: list[Decimal],
+) -> str | None:
+    """The pill for a last price that has reached the stop or a target. No minute is claimed."""
+
+    if price is None or price <= 0 or not targets:
+        return None
+    if side == "SELL":
+        if price >= stop:
+            return "stop"
+        hit = [index for index, target in enumerate(targets) if price <= target]
+    else:
+        if price <= stop:
+            return "stop"
+        hit = [index for index, target in enumerate(targets) if price >= target]
+    if not hit:
+        return None
+    furthest = max(hit)
+    if furthest == len(targets) - 1:
+        return "final"
+    if furthest == 0:
+        return "t1_trail"
+    if furthest == 1:
+        return "t2_trail"
+    return "trail"
+
+
+def _quoted_level(card: SignalCard) -> str | None:
+    if card.status != "active" or card.guide in CLOSED_MARKS:
+        return None
+    if card.quote_state != "ready" or not card.last_price or not card.provider_values.targets:
+        return None
+    try:
+        return quoted_level(
+            card.side,
+            Decimal(card.last_price),
+            Decimal(card.provider_values.stop_loss),
+            [Decimal(item.price) for item in card.provider_values.targets],
+        )
+    except (InvalidOperation, IndexError):
+        return None
+
+
+def quote_spent(card: SignalCard) -> bool:
+    """True when the last price has already traded through the stop or a target."""
+
+    return _quoted_level(card) is not None
+
+
+def quote_gate(card: SignalCard) -> SignalCard:
+    """Show Stop, a trail, or Final from the last price until the bars name the minute."""
+
+    level = _quoted_level(card)
+    if level is None:
+        return card
+    hint = _LEVEL_HINT[level]
+    word = _WORDS.get(level) or "Trail"
+    return card.model_copy(
+        update={
+            "guide": level if level in _WORDS else "trail",
+            "guide_label": word,
+            "guide_hint": hint,
+            "executable": False,
+        }
+    )
 
 
 def apply_progress(cards: list[SignalCard], *, now: datetime) -> list[SignalCard]:
@@ -173,6 +292,26 @@ def _resolve(
     window_days = _session_days(sent.date(), deadline.date())
     if not window_days:
         return None
+    preview, preview_pending, preview_failed = _load(
+        code, window_days, moment, budget, enqueue=False
+    )
+    if (
+        not preview_pending
+        and not preview_failed
+        and _window_covered(preview, sent, deadline, moment)
+    ):
+        finished = assess_path(
+            side=side,
+            trigger=trigger,
+            stop=stop,
+            targets=targets,
+            published_at=sent,
+            bars=preview,
+            now=moment,
+            covered=True,
+        )
+        if finished is not None and finished.code in CLOSED_MARKS:
+            return finished
     bars, pending, failed = _load(code, window_days, moment, budget, enqueue)
     if pending:
         return Progress("pending", None)
