@@ -90,6 +90,8 @@ export type SignalCard = {
   change_percent?: string | null;
   quote_label?: "LTP" | "Last LTP";
   quote_state?: "ready" | "missing" | "unconfigured" | "unavailable";
+  stars?: number | null;
+  star_hint?: string | null;
 };
 
 export type ChartCandle = {

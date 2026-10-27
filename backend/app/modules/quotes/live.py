@@ -14,12 +14,13 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from app.modules.quotes.fyers import QuotePrint
+from app.modules.quotes.fyers import QuotePrint, quote_anchor
 
 logger = logging.getLogger("quantivo.quotes")
 
 _FRESH = timedelta(seconds=30)
 _SYMBOL_CAP = 100
+_TICK_BAND = Decimal("0.25")
 _LOCK = threading.Lock()
 _BOOK: dict[str, tuple[datetime, QuotePrint]] = {}
 _WANTED: set[str] = set()
@@ -49,13 +50,13 @@ def remember_tick(message: dict, moment: datetime) -> None:
     price = _decimal(message.get("ltp"))
     if price is None or price <= 0:
         return
-    change = _decimal(message.get("chp"))
-    if change is None:
-        previous = _decimal(message.get("prev_close_price"))
-        if previous is not None and previous > 0:
-            change = ((price - previous) / previous * Decimal(100)).quantize(Decimal("0.01"))
-    else:
-        change = change.quantize(Decimal("0.01"))
+    anchor = quote_anchor(symbol)
+    if anchor is None or not _within_band(price, anchor):
+        return
+    previous = _decimal(message.get("prev_close_price"))
+    change = None
+    if previous is not None and previous > 0 and _within_band(previous, anchor):
+        change = ((price - previous) / previous * Decimal(100)).quantize(Decimal("0.01"))
     with _LOCK:
         _BOOK[symbol] = (moment, QuotePrint(price, change))
     from app.modules.progress.history import note_print
@@ -82,6 +83,13 @@ def watch_symbols(codes: list[str]) -> None:
         _WANTED.clear()
         _WANTED.update(codes[:_SYMBOL_CAP])
     _ensure_started()
+
+
+def _within_band(price: Decimal, anchor: Decimal | None) -> bool:
+    """A mixed socket update can carry another symbol's price. The quote decides."""
+    if anchor is None or anchor <= 0:
+        return True
+    return abs(price - anchor) / anchor <= _TICK_BAND
 
 
 def _decimal(raw: object) -> Decimal | None:

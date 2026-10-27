@@ -103,16 +103,20 @@ export default function AdminScreen() {
   const [kiteRemove, setKiteRemove] = useState(false);
   const [feeds, setFeeds] = useState<FeedOut[]>([]);
   const [scanners, setScanners] = useState<ScannerOut[]>([]);
-  const [channelScannerId, setChannelScannerId] = useState("");
   const [providerName, setProviderName] = useState("");
   const [scannerName, setScannerName] = useState("");
+  const [scannerDescription, setScannerDescription] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ channelId: string; text: string; error: boolean } | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newSegment, setNewSegment] = useState<"equity" | "fno" | "commodity">("equity");
   const [adding, setAdding] = useState(false);
+  const [channelAdds, setChannelAdds] = useState<
+    Record<string, { name: string; segment: "equity" | "fno" | "commodity" }>
+  >({});
+  const [providerDrafts, setProviderDrafts] = useState<Record<string, string>>({});
+  const [descriptionDrafts, setDescriptionDrafts] = useState<Record<string, string>>({});
+  const [removingScanner, setRemovingScanner] = useState<string | null>(null);
   const [scannerDrafts, setScannerDrafts] = useState<Record<string, string>>({});
   const [savingScanner, setSavingScanner] = useState<string | null>(null);
   const [scannerNote, setScannerNote] = useState<{ id: string; text: string; error: boolean } | null>(null);
@@ -149,16 +153,9 @@ export default function AdminScreen() {
     setFeeds(nextFeeds);
     setOrders(nextOrders);
     setScanners(catalogue);
-    setScannerDrafts((current) => {
-      const next = { ...current };
-      for (const scanner of catalogue) {
-        if (next[scanner.id] === undefined) {
-          next[scanner.id] = scanner.name;
-        }
-      }
-      return next;
-    });
-    setChannelScannerId((current) => current || catalogue[0]?.id || "");
+    setScannerDrafts(Object.fromEntries(catalogue.map((scanner) => [scanner.id, scanner.name])));
+    setProviderDrafts(Object.fromEntries(catalogue.map((scanner) => [scanner.id, scanner.provider_name])));
+    setDescriptionDrafts(Object.fromEntries(catalogue.map((scanner) => [scanner.id, scanner.description])));
     setDrafts((current) => {
       const next = { ...current };
       for (const feed of nextFeeds) {
@@ -296,21 +293,23 @@ export default function AdminScreen() {
     }
   }
 
-  async function addChannel() {
+  async function addChannel(scannerId: string) {
+    const draft = channelAdds[scannerId] ?? { name: "", segment: "equity" as const };
+    const named = draft.name.trim();
+    if (!named) {
+      setError("Enter a channel name.");
+      return;
+    }
     setAdding(true);
     setAdded(null);
     setError(null);
     try {
       const created = await api<FeedOut>("/api/v1/admin/source-channels", {
         method: "POST",
-        body: JSON.stringify({
-          name: newName.trim(),
-          segment: newSegment,
-          scanner_id: channelScannerId || null,
-        }),
+        body: JSON.stringify({ name: named, segment: draft.segment, scanner_id: scannerId }),
       });
-      setNewName("");
-      setAdded(`${created.channel_name} added. Traders register for it separately. Its feed starts as sample.`);
+      setChannelAdds((current) => ({ ...current, [scannerId]: { name: "", segment: draft.segment } }));
+      setAdded(`${created.channel_name} added under ${created.scanner_name}. Traders register for it separately.`);
       await load();
     } catch (caught) {
       setError(caught instanceof ApiRequestError ? caught.message : "The channel could not be added.");
@@ -479,8 +478,14 @@ export default function AdminScreen() {
 
   async function saveScanner(scanner: ScannerOut) {
     const named = (scannerDrafts[scanner.id] ?? scanner.name).trim();
-    if (!named) {
-      setScannerNote({ id: scanner.id, text: "Enter a scanner name.", error: true });
+    const provider = (providerDrafts[scanner.id] ?? scanner.provider_name).trim();
+    const description = (descriptionDrafts[scanner.id] ?? scanner.description).trim();
+    if (!named || !provider || !description) {
+      setScannerNote({
+        id: scanner.id,
+        text: "Enter the provider name, the scanner name, and the description.",
+        error: true,
+      });
       return;
     }
     setSavingScanner(scanner.id);
@@ -488,22 +493,37 @@ export default function AdminScreen() {
     try {
       const saved = await api<{ id: string; name: string; provider_name: string }>(
         `/api/v1/admin/scanners/${scanner.id}`,
-        { method: "PUT", body: JSON.stringify({ name: named }) },
+        {
+          method: "PUT",
+          body: JSON.stringify({ name: named, provider_name: provider, description }),
+        },
       );
-      setScanners((current) =>
-        current.map((item) => (item.id === saved.id ? { ...item, name: saved.name } : item)),
-      );
-      setFeeds((current) =>
-        current.map((feed) =>
-          feed.scanner_id === saved.id ? { ...feed, scanner_name: saved.name } : feed,
-        ),
-      );
-      setScannerDrafts((current) => ({ ...current, [saved.id]: saved.name }));
-      setScannerNote({ id: saved.id, text: `${saved.name} saved.`, error: false });
+      setScannerNote({ id: saved.id, text: `${saved.provider_name} · ${saved.name} saved.`, error: false });
+      await load();
     } catch (caught) {
       setScannerNote({
         id: scanner.id,
         text: caught instanceof ApiRequestError ? caught.message : "The scanner could not be saved.",
+        error: true,
+      });
+    } finally {
+      setSavingScanner(null);
+    }
+  }
+
+  async function removeScanner(scanner: ScannerOut) {
+    setSavingScanner(scanner.id);
+    setError(null);
+    try {
+      await api(`/api/v1/admin/scanners/${scanner.id}`, { method: "DELETE" });
+      setRemovingScanner(null);
+      setAdded(`${scanner.name} is deleted.`);
+      await load();
+    } catch (caught) {
+      setRemovingScanner(scanner.id);
+      setScannerNote({
+        id: scanner.id,
+        text: caught instanceof ApiRequestError ? caught.message : "The scanner could not be deleted.",
         error: true,
       });
     } finally {
@@ -518,13 +538,17 @@ export default function AdminScreen() {
     try {
       const created = await api<{ id: string; name: string; provider_name: string }>("/api/v1/admin/scanners", {
         method: "POST",
-        body: JSON.stringify({ provider_name: providerName.trim(), name: scannerName.trim() }),
+        body: JSON.stringify({
+          provider_name: providerName.trim(),
+          name: scannerName.trim(),
+          description: scannerDescription.trim(),
+        }),
       });
       setProviderName("");
       setScannerName("");
-      setAdded(`${created.provider_name} · ${created.name} added. Add a channel under it next.`);
+      setScannerDescription("");
+      setAdded(`${created.provider_name} · ${created.name} added. Add a channel on its card.`);
       await load();
-      setChannelScannerId(created.id);
     } catch (caught) {
       setError(caught instanceof ApiRequestError ? caught.message : "The scanner could not be added.");
     } finally {
@@ -863,10 +887,10 @@ export default function AdminScreen() {
             <Text style={[ui.meta, { color: orderError ? colors.danger : colors.accent, marginTop: 12 }]}>{orderNote}</Text>
           ) : null}
         </View>
-        <Text style={ui.section}>Scanners</Text>
+        <Text style={ui.section}>Catalogue</Text>
         <View style={ui.card}>
           <Text style={ui.rowTitle}>Add a scanner</Text>
-          <Text style={ui.meta}>The provider name is who publishes it. The scanner name is what traders open. It starts with no channels and no price.</Text>
+          <Text style={ui.meta}>The provider is who publishes it. The scanner is what traders open. Channels are added on that scanner's card. A new scanner has no channels and no price.</Text>
           <Text style={[ui.label, { marginTop: 12 }]}>Provider</Text>
           <TextInput
             style={ui.input}
@@ -883,19 +907,45 @@ export default function AdminScreen() {
             placeholder="Scanner name"
             placeholderTextColor={colors.muted}
           />
+          <Text style={ui.label}>Description</Text>
+          <TextInput
+            style={[ui.input, { minHeight: 88 }]}
+            value={scannerDescription}
+            onChangeText={setScannerDescription}
+            placeholder="Shown under the scanner name"
+            placeholderTextColor={colors.muted}
+            multiline
+          />
           <Pressable
             style={ui.primary}
-            disabled={adding || providerName.trim().length === 0 || scannerName.trim().length === 0}
+            disabled={
+              adding ||
+              providerName.trim().length === 0 ||
+              scannerName.trim().length === 0 ||
+              scannerDescription.trim().length === 0
+            }
             onPress={addScanner}
           >
             <Text style={ui.primaryText}>{adding ? "Adding…" : "Add scanner"}</Text>
           </Pressable>
         </View>
-        {scanners.map((scanner) => (
+        {added ? <Text style={[ui.meta, { color: colors.accent, marginTop: 12 }]}>{added}</Text> : null}
+        {scanners.map((scanner) => {
+          const rows = feeds.filter((feed) => feed.scanner_id === scanner.id);
+          const channelAdd = channelAdds[scanner.id] ?? { name: "", segment: "equity" as const };
+          return (
           <View key={scanner.id} style={ui.card}>
-            <Text style={ui.rowTitle}>{scanner.provider_name}</Text>
-            <Text style={ui.meta}>The scanner name is what traders open.</Text>
-            <Text style={[ui.label, { marginTop: 12 }]}>Scanner name</Text>
+            <Text style={ui.rowTitle}>{scanner.provider_name} · {scanner.name}</Text>
+            <Text style={ui.meta}>The provider is shared by every scanner from that publisher. The scanner name is what traders open.</Text>
+            <Text style={[ui.label, { marginTop: 12 }]}>Provider name</Text>
+            <TextInput
+              style={ui.input}
+              value={providerDrafts[scanner.id] ?? scanner.provider_name}
+              onChangeText={(value) =>
+                setProviderDrafts((current) => ({ ...current, [scanner.id]: value }))
+              }
+            />
+            <Text style={ui.label}>Scanner name</Text>
             <TextInput
               style={ui.input}
               value={scannerDrafts[scanner.id] ?? scanner.name}
@@ -903,63 +953,69 @@ export default function AdminScreen() {
                 setScannerDrafts((current) => ({ ...current, [scanner.id]: value }))
               }
             />
-            <Pressable
-              style={ui.primary}
-              disabled={savingScanner === scanner.id}
-              onPress={() => saveScanner(scanner)}
-            >
-              <Text style={ui.primaryText}>{savingScanner === scanner.id ? "Saving…" : "Save scanner"}</Text>
-            </Pressable>
+            <Text style={ui.label}>Description</Text>
+            <TextInput
+              style={[ui.input, { minHeight: 88 }]}
+              value={descriptionDrafts[scanner.id] ?? scanner.description}
+              onChangeText={(value) =>
+                setDescriptionDrafts((current) => ({ ...current, [scanner.id]: value }))
+              }
+              multiline
+            />
+            {removingScanner === scanner.id ? (
+              <Warning
+                title={`Delete ${scanner.name}?`}
+                body="This removes the scanner and its channels. Stored calls go with those channels. A channel with an order record keeps the scanner. This cannot be undone."
+                confirmLabel={`Delete ${scanner.name}`}
+                cancelLabel="Keep this scanner"
+                busy={savingScanner === scanner.id}
+                onCancel={() => setRemovingScanner(null)}
+                onConfirm={() => void removeScanner(scanner)}
+              />
+            ) : (
+              <>
+                <Pressable
+                  style={ui.primary}
+                  disabled={savingScanner === scanner.id}
+                  onPress={() => saveScanner(scanner)}
+                >
+                  <Text style={ui.primaryText}>{savingScanner === scanner.id ? "Saving…" : "Save scanner"}</Text>
+                </Pressable>
+                <Pressable style={ui.ghost} disabled={savingScanner === scanner.id} onPress={() => setRemovingScanner(scanner.id)}>
+                  <Text style={[ui.ghostText, { color: colors.danger }]}>Delete scanner</Text>
+                </Pressable>
+              </>
+            )}
             {scannerNote?.id === scanner.id ? (
               <Text style={[ui.meta, { color: scannerNote.error ? colors.danger : colors.accent, marginTop: 12 }]}>
                 {scannerNote.text}
               </Text>
             ) : null}
-          </View>
-        ))}
-        <Text style={ui.section}>Channels</Text>
-        <View style={ui.card}>
-          <Text style={ui.rowTitle}>Add a channel</Text>
-          <Text style={ui.meta}>The name is what traders see. Choose which scanner it belongs to. A new channel has no calls until its feed is configured.</Text>
-          <Text style={[ui.label, { marginTop: 12 }]}>Scanner</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
-            {scanners.map((scanner) => (
-              <Choice
-                key={scanner.id}
-                label={`${scanner.provider_name} · ${scanner.name}`}
-                selected={channelScannerId === scanner.id}
-                onPress={() => setChannelScannerId(scanner.id)}
-              />
-            ))}
-          </ScrollView>
-          <Text style={[ui.label, { marginTop: 12 }]}>Channel name</Text>
-          <TextInput
-            style={ui.input}
-            value={newName}
-            onChangeText={(value) => {
-              setNewName(value);
-              setAdded(null);
-            }}
-            placeholder="F&O"
-            placeholderTextColor={colors.muted}
-          />
-          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-            <Choice label="Equity" selected={newSegment === "equity"} onPress={() => setNewSegment("equity")} />
-            <Choice label="F&O" selected={newSegment === "fno"} onPress={() => setNewSegment("fno")} />
-            <Choice label="Commodity" selected={newSegment === "commodity"} onPress={() => setNewSegment("commodity")} />
-          </View>
-          <Pressable style={ui.primary} disabled={adding || newName.trim().length === 0} onPress={addChannel}>
-            <Text style={ui.primaryText}>{adding ? "Adding…" : "Add channel"}</Text>
-          </Pressable>
-          {added ? <Text style={[ui.meta, { color: colors.accent, marginTop: 12 }]}>{added}</Text> : null}
-        </View>
-        {scanners.map((scanner) => {
-          const rows = feeds.filter((feed) => feed.scanner_id === scanner.id);
-          return (
-            <View key={scanner.id}>
-              <Text style={ui.section}>{scanner.provider_name} · {scanner.name}</Text>
-              {rows.length === 0 ? <Text style={[ui.meta, { marginBottom: 12 }]}>No channels yet.</Text> : null}
-              {rows.map((feed) => (
+            <Text style={[ui.section, { marginTop: 8 }]}>Channels</Text>
+            <Text style={ui.label}>Channel name</Text>
+            <TextInput
+              style={ui.input}
+              value={channelAdd.name}
+              onChangeText={(name) =>
+                setChannelAdds((current) => ({ ...current, [scanner.id]: { ...channelAdd, name } }))
+              }
+              placeholder="F&O"
+              placeholderTextColor={colors.muted}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+              <Choice label="Equity" selected={channelAdd.segment === "equity"} onPress={() => setChannelAdds((current) => ({ ...current, [scanner.id]: { ...channelAdd, segment: "equity" } }))} />
+              <Choice label="F&O" selected={channelAdd.segment === "fno"} onPress={() => setChannelAdds((current) => ({ ...current, [scanner.id]: { ...channelAdd, segment: "fno" } }))} />
+              <Choice label="Commodity" selected={channelAdd.segment === "commodity"} onPress={() => setChannelAdds((current) => ({ ...current, [scanner.id]: { ...channelAdd, segment: "commodity" } }))} />
+            </View>
+            <Pressable
+              style={ui.primary}
+              disabled={adding || channelAdd.name.trim().length === 0}
+              onPress={() => addChannel(scanner.id)}
+            >
+              <Text style={ui.primaryText}>{adding ? "Adding…" : "Add channel"}</Text>
+            </Pressable>
+            {rows.length === 0 ? <Text style={[ui.meta, { marginTop: 12 }]}>No channels yet.</Text> : null}
+            {rows.map((feed) => (
           <ChannelCard
             key={feed.channel_id}
             feed={feed}

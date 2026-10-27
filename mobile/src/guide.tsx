@@ -12,6 +12,7 @@ const tones: Record<string, { bg: string; ink: string }> = {
   t2_trail: { bg: "#e5f2ea", ink: "#0b6a34" },
   trail: { bg: "#e5f2ea", ink: "#0b6a34" },
   final: { bg: "#e7f6ee", ink: "#0b6a34" },
+  open: { bg: "#e7f6ee", ink: "#16804A" },
   stop: { bg: "#f8e6e4", ink: "#9c1d1d" },
   window_over: { bg: "#e7e0d2", ink: "#3a4450" },
   stale: { bg: "#f6ecd4", ink: "#6d4e12" },
@@ -37,5 +38,19 @@ export function GuideMark({
       <View style={[ui.guideDot, { backgroundColor: tone.ink }]} />
       <Text style={[ui.guideText, { color: tone.ink }]}>{label}</Text>
     </View>
+  );
+}
+
+export function StarMark({ count, hint }: { count: number; hint: string }) {
+  const filled = Math.max(0, Math.min(5, count));
+  const empty = 5 - filled;
+  return (
+    <Text
+      accessibilityLabel={`${filled} of 5 stars. ${hint}`}
+      style={{ fontSize: 13, letterSpacing: 0.4 }}
+    >
+      <Text style={{ color: "#8a6a12" }}>{"★".repeat(filled)}</Text>
+      <Text style={{ color: "#c4bba8" }}>{"☆".repeat(empty)}</Text>
+    </Text>
   );
 }

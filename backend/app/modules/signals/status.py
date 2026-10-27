@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.modules.signals.clocks import CallClocks, stale_window
+from app.modules.signals.clocks import CallClocks, stale_window, still_tracking
 from app.modules.signals.models import Signal
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -47,7 +47,7 @@ def derived_status(signal: Signal, now: datetime, clocks: CallClocks | None = No
 
     if signal.match_status != "matched":
         return signal.match_status
-    if signal.expires_at <= now:
+    if signal.expires_at <= now and not still_tracking(signal, now):
         return "expired"
     window = stale_window(signal, clocks or CallClocks())
     if window is not None and signal.published_at <= now - window:

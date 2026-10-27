@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.modules.progress.history import IST, day_state, request_day
 from app.modules.progress.path import Progress, assess_path
 from app.modules.quotes.fyers import fyers_code
+from app.modules.signals.clocks import _expires_at_cash_close
 from app.modules.signals.schemas import SignalCard
 from app.modules.signals.status import entry_deadline
 
@@ -158,6 +159,8 @@ def quote_spent(card: SignalCard) -> bool:
 def quote_gate(card: SignalCard) -> SignalCard:
     """Show Stop, a trail, or Final from the last price until the bars name the minute."""
 
+    if _expires_at_cash_close(card):
+        return card
     level = _quoted_level(card)
     if level is None:
         return card
@@ -211,6 +214,8 @@ def terminal_mark(
 
 
 def _paint(card: SignalCard, now: datetime, budget: list[int]) -> SignalCard:
+    if _expires_at_cash_close(card):
+        return card
     if card.status != "active" or card.guide == "no_symbol" or card.segment.casefold() != "equity":
         return card
     try:

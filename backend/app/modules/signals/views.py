@@ -11,6 +11,7 @@ from app.core.errors import AppError
 from app.core.money import money
 from app.modules.brokers.service import broker_for_trader
 from app.modules.feeds.equity_parser import align_prices
+from app.modules.feeds.pdl_sweep import desk_stars, outcome_guide, visible_note
 from app.modules.feeds.service import scanner_feed_mode
 from app.modules.feeds.window import quote_label, session_day
 from app.modules.progress.candles import session_candles
@@ -21,7 +22,12 @@ from app.modules.risk.models import RiskProfile
 from app.modules.risk.service import get_profile
 from app.modules.scanners.channels import list_scanner_channels, visible_channel_ids
 from app.modules.scanners.models import Scanner, ScannerProvider, SourceChannel
-from app.modules.signals.clocks import CallClocks, load_clocks
+from app.modules.signals.clocks import (
+    CallClocks,
+    _expires_at_cash_close,
+    load_clocks,
+    still_tracking,
+)
 from app.modules.signals.models import Signal
 from app.modules.signals.schemas import (
     BrokerSummary,
@@ -60,7 +66,7 @@ def _provider_values(signal: Signal) -> ProviderValues:
             )
             for item in signal.targets
         ],
-        note=signal.provider_note,
+        note=visible_note(signal.provider_note),
     )
 
 
@@ -118,6 +124,17 @@ def _card(
 ) -> SignalCard:
     status = derived_status(signal, now, clocks)
     guide, guide_label, guide_hint = guide_for(signal, now, clocks)
+    recorded = outcome_guide(signal.provider_note, guide, now=now)
+    rated = desk_stars(signal.provider_note)
+    if recorded is not None:
+        guide, guide_label, guide_hint = recorded
+    elif still_tracking(signal, now):
+        guide, guide_label, guide_hint = (
+            "open",
+            "Open",
+            "The desk has not recorded a target hit. "
+            "This call stays on Actionable through the trade date.",
+        )
     calculated = _quantivo_values(db, user_id, signal, profile)
     if channel is None:
         channel = _channel(db, signal)
@@ -131,10 +148,12 @@ def _card(
         status=status,
         stored_status=signal.status,
         warning=warning_for(status),
-        executable=is_executable(status),
+        executable=is_executable(status) and not _closed_for_orders(signal, status, now),
         guide=guide,  # type: ignore[arg-type]
         guide_label=guide_label,
         guide_hint=guide_hint,
+        stars=None if rated is None else rated[0],
+        star_hint=None if rated is None else rated[1],
         published_at=signal.published_at,
         expires_at=signal.expires_at,
         provider_name=provider.name,
@@ -262,6 +281,9 @@ def list_signals(
     cards = [quote_gate(card) for card in apply_progress(cards, now=now)]
     shown: list[SignalCard] = []
     for card in cards:
+        if still_tracking(card, now):
+            shown.append(card)
+            continue
         if card.guide in CLOSED_MARKS or quote_spent(card):
             hidden += 1
             if view == "actionable":
@@ -388,9 +410,19 @@ def _with_quotes(
 def _quoted(card: SignalCard, *, actionable_only: bool) -> bool:
     if card.guide == "no_symbol":
         return False
+    if _desk_call(card):
+        return True
     if actionable_only and card.status != "active":
         return False
     return True
+
+
+def _desk_call(card: SignalCard) -> bool:
+    return _expires_at_cash_close(card)
+
+
+def _closed_for_orders(signal, status: str, now) -> bool:
+    return status == "active" and still_tracking(signal, now) and signal.expires_at <= now
 
 
 def get_signal(db: Session, *, user_id: UUID, signal_id: UUID) -> SignalDetail:

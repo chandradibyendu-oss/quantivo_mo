@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 
 import { api, ApiRequestError } from "@/api";
-import { GuideMark } from "@/guide";
+import { GuideMark, StarMark } from "@/guide";
 import { ChartMark } from "@/marks";
 import { quoteTone } from "@/quote";
 import { shownTargets } from "@/targets";
@@ -47,8 +47,14 @@ export default function SignalDetailScreen() {
             <Text style={ui.meta}>
               {signal.provider_name} · {signal.scanner_name}
             </Text>
-            <View style={{ flexDirection: "row", marginTop: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 8 }}>
               <GuideMark code={signal.guide} label={signal.guide_label} hint={signal.guide_hint} />
+              {signal.stars != null ? (
+                <StarMark
+                  count={signal.stars}
+                  hint={signal.star_hint ?? "The desk's 7-day target touch rating."}
+                />
+              ) : null}
             </View>
             <Text style={ui.meta}>{signal.guide_hint}</Text>
             <Text style={ui.meta}>
@@ -69,7 +75,7 @@ export default function SignalDetailScreen() {
                       : ""}
                   </Text>
                 </Text>
-                <Link href={`/signals/${signal.id}/chart`} asChild>
+                <Link href={`/signals/${signal.id}/chart?from=call`} push asChild>
                   <Pressable style={ui.chartIcon} accessibilityRole="link" accessibilityLabel={`Chart for ${signal.symbol}`}>
                     <ChartMark />
                   </Pressable>

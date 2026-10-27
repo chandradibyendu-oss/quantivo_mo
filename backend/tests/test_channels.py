@@ -107,7 +107,11 @@ def test_a_scanner_keeps_its_own_channels(client, db):
     second = client.post(
         "/api/v1/admin/scanners",
         headers=headers,
-        json={"provider_name": "Harbour", "name": "Harbour Swing"},
+        json={
+            "provider_name": "Harbour",
+            "name": "Harbour Swing",
+            "description": "Swing calls from Harbour.",
+        },
     )
     assert second.status_code == 200, second.text
     listed = client.get("/api/v1/scanners", headers=headers).json()
@@ -127,6 +131,7 @@ def test_a_scanner_keeps_its_own_channels(client, db):
     assert harbour[0]["description"] == (
         "Harbour Desk from Harbour. Channels are added separately."
     )
+    assert harbour[1]["description"] == "Swing calls from Harbour."
     assert harbour[0]["price_inr"] is None
     assert harbour[0]["verified_rating"] is None
 
@@ -214,3 +219,65 @@ def test_delete_removes_an_empty_channel_and_refuses_one_with_an_order(client, d
     assert "order record" in blocked.json()["error"]["message"]
     still = db.scalar(select(func.count()).select_from(Signal))
     assert still == equity["stored_calls"]
+
+
+def test_an_operator_renames_the_provider_and_deletes_an_empty_scanner(client, db):
+    session = sign_in(client, "9988776611")
+    headers = bearer(session["access_token"])
+    grant_admin_role(db, "9988776611")
+    db.commit()
+    created = client.post(
+        "/api/v1/admin/scanners",
+        headers=headers,
+        json={"provider_name": "North", "name": "North Calls"},
+    )
+    assert created.status_code == 200, created.text
+    scanner_id = created.json()["id"]
+    swing = client.post(
+        "/api/v1/admin/scanners",
+        headers=headers,
+        json={"provider_name": "North", "name": "North Swing"},
+    )
+    assert swing.status_code == 200, swing.text
+    renamed = client.put(
+        f"/api/v1/admin/scanners/{scanner_id}",
+        headers=headers,
+        json={"name": "North Desk", "provider_name": "North House"},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["provider_name"] == "North House"
+    listed = client.get("/api/v1/scanners", headers=headers).json()
+    house = [item["name"] for item in listed if item["provider_name"] == "North House"]
+    assert house == ["North Desk", "North Swing"]
+    described = client.put(
+        f"/api/v1/admin/scanners/{scanner_id}",
+        headers=headers,
+        json={
+            "name": "North Desk",
+            "provider_name": "North House",
+            "description": "North desk calls.",
+        },
+    )
+    assert described.status_code == 200, described.text
+    again = client.get("/api/v1/scanners", headers=headers).json()
+    desk = next(item for item in again if item["id"] == scanner_id)
+    assert desk["description"] == "North desk calls."
+    solo = client.post(
+        "/api/v1/admin/scanners",
+        headers=headers,
+        json={"provider_name": "South", "name": "South Calls"},
+    )
+    assert solo.status_code == 200, solo.text
+    moved = client.put(
+        f"/api/v1/admin/scanners/{solo.json()['id']}",
+        headers=headers,
+        json={"name": "South Calls", "provider_name": "North House"},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["provider_name"] == "North House"
+    removed = client.delete(f"/api/v1/admin/scanners/{swing.json()['id']}", headers=headers)
+    assert removed.status_code == 204, removed.text
+    names = {item["name"] for item in client.get("/api/v1/scanners", headers=headers).json()}
+    assert "North Swing" not in names
+    assert "North Desk" in names
+    assert "South Calls" in names

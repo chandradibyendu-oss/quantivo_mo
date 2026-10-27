@@ -6,7 +6,7 @@ import { api, ApiRequestError } from "@/api";
 import { quoteTone } from "@/quote";
 import { shownTargets } from "@/targets";
 import { useAuth } from "@/auth";
-import { GuideMark } from "@/guide";
+import { GuideMark, StarMark } from "@/guide";
 import { ChartMark } from "@/marks";
 import { AppShell } from "@/shell";
 import type { ScannerOut, SignalCard, SignalListOut, TraderChannel } from "@/types";
@@ -516,6 +516,12 @@ function SignalRow({ signal }: { signal: SignalCard }) {
               <Text style={ui.qtyUnit}>qty</Text>
             </View>
           </View>
+          {signal.stars != null ? (
+            <StarMark
+              count={signal.stars}
+              hint={signal.star_hint ?? "The desk's 7-day target touch rating."}
+            />
+          ) : null}
           <Text style={ui.callMeta}>
             {signal.horizon_raw} · {signal.channel_name} · {ageLabel(signal.published_at)}
           </Text>
@@ -538,7 +544,7 @@ function SignalRow({ signal }: { signal: SignalCard }) {
         </Pressable>
       </Link>
       {quoted(signal) ? (
-        <Link href={`/signals/${signal.id}/chart`} asChild>
+        <Link href={`/signals/${signal.id}/chart?from=list`} push asChild>
           <Pressable style={ui.chartIcon} accessibilityRole="link" accessibilityLabel={`Chart for ${signal.symbol}`}>
             <ChartMark />
           </Pressable>

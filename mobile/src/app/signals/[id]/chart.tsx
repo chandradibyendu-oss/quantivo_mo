@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useGlobalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -50,7 +50,9 @@ type Grant = {
 };
 
 export default function SignalChartScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useGlobalSearchParams<{ id: string; from?: string }>();
+  const id = typeof params.id === "string" ? params.id : params.id?.[0];
+  const from = typeof params.from === "string" ? params.from : params.from?.[0];
   const { ready, userId } = useAuth();
   const [interval, setInterval] = useState<"1m" | "5m">("5m");
   const [chart, setChart] = useState<SignalChart | null>(null);
@@ -97,7 +99,21 @@ export default function SignalChartScreen() {
   return (
     <AppShell
       title={chart?.symbol ?? signal?.symbol ?? "Chart"}
-      onBack={() => router.replace(id ? `/signals/${id}` : "/signals")}
+      onBack={() => {
+        const origin =
+          Platform.OS === "web"
+            ? new URLSearchParams(window.location.search).get("from")
+            : from;
+        if (origin === "call" && id) {
+          router.replace(`/signals/${id}`);
+          return;
+        }
+        if (router.canGoBack()) {
+          router.back();
+          return;
+        }
+        router.replace("/signals");
+      }}
     >
       <ScrollView scrollEnabled={scrollable} contentContainerStyle={{ paddingLeft: 16, paddingBottom: 28 }}>
         <View style={{ paddingRight: 16 }}>

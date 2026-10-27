@@ -8,6 +8,7 @@ class ScannerCreate(BaseModel):
     provider_name: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=120)
     category: str = Field(default="Calls", max_length=64)
+    description: str | None = Field(default=None, max_length=400)
 
 
 class ScannerCreated(BaseModel):
@@ -18,6 +19,8 @@ class ScannerCreated(BaseModel):
 
 class ScannerRename(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    provider_name: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=400)
 
 
 class ChannelCreate(BaseModel):

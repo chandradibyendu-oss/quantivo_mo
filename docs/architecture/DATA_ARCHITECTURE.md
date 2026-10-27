@@ -181,7 +181,7 @@ Physical names, keys, and the phase that first inserts a row:
 
 **`scanner_providers`** ? `code` unique. `status` is `active` or `inactive`. Seeded row: code `mani`, name `Mani's`, monogram `M`.
 
-**`scanners`** — unique `(provider_id, code)`. An operator adds a scanner with a provider name and a scanner name, and can rename the scanner later. The code stays. The same provider name reuses the provider. A scanner added this way has no price and no channels until a channel is added under it.
+**`scanners`** — unique `(provider_id, code)`. An operator adds a scanner with a provider name and a scanner name. The same provider name reuses the provider. Renaming that provider renames it for every scanner under it. Naming an existing provider moves the scanner. The scanner code stays unless the move would duplicate it. Deleting a scanner removes its channels. A channel with an order record keeps the scanner. A scanner added this way has no price and no channels until a channel is added under it.
 
 | Column | Type | Null | Definition |
 | --- | --- | --- | --- |

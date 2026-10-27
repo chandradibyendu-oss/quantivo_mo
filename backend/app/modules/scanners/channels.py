@@ -57,6 +57,7 @@ def create_scanner(
     provider_name: str,
     name: str,
     category: str,
+    description: str | None,
     actor_user_id: UUID,
     correlation_id: str | None,
 ) -> tuple[Scanner, ScannerProvider]:
@@ -96,7 +97,10 @@ def create_scanner(
         provider_id=provider.id,
         code=_code_for(scanner_label, "scanner", taken_scanners),
         name=scanner_label,
-        description=f"{scanner_label} from {provider.name}. Channels are added separately.",
+        description=(
+            _description(description)
+            or f"{scanner_label} from {provider.name}. Channels are added separately."
+        ),
         category=category_label,
         price_inr=None,
         billing_frequency=None,
@@ -125,6 +129,8 @@ def rename_scanner(
     *,
     scanner_id: UUID,
     name: str,
+    provider_name: str | None,
+    description: str | None,
     actor_user_id: UUID,
     correlation_id: str | None,
 ) -> tuple[Scanner, ScannerProvider]:
@@ -137,20 +143,104 @@ def rename_scanner(
     provider = db.get(ScannerProvider, scanner.provider_id)
     if provider is None:
         raise AppError(404, "scanner_not_found", "That scanner is not in the catalogue.")
-    generated = f"{scanner.name} from {provider.name}. Channels are added separately."
-    if scanner.description == generated:
-        scanner.description = f"{cleaned} from {provider.name}. Channels are added separately."
+    previous_name = scanner.name
+    previous_provider = provider.name
+    provider = _place_provider(db, scanner, provider, provider_name)
+    written = _description(description)
+    if written is None:
+        generated = f"{previous_name} from {previous_provider}. Channels are added separately."
+        if scanner.description == generated:
+            scanner.description = f"{cleaned} from {provider.name}. Channels are added separately."
+    else:
+        scanner.description = written
     scanner.name = cleaned
     record(
         db,
         action="scanner.renamed",
         entity_type="scanner",
         entity_id=scanner.id,
-        payload={"scanner_code": scanner.code, "name": cleaned},
+        payload={
+            "scanner_code": scanner.code,
+            "name": cleaned,
+            "provider_name": provider.name,
+        },
         actor_user_id=actor_user_id,
         correlation_id=correlation_id,
     )
     return scanner, provider
+
+
+def delete_scanner(
+    db: Session,
+    *,
+    scanner_id: UUID,
+    actor_user_id: UUID,
+    correlation_id: str | None,
+) -> None:
+    """Remove a scanner after its channels. An order record keeps the scanner."""
+
+    scanner = db.get(Scanner, scanner_id)
+    if scanner is None or scanner.status != "active":
+        raise AppError(404, "scanner_not_found", "That scanner is not in the catalogue.")
+    channels = list_scanner_channels(db, scanner.id)
+    for channel in channels:
+        delete_source_channel(
+            db,
+            channel_id=channel.id,
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
+        )
+    record(
+        db,
+        action="scanner.deleted",
+        entity_type="scanner",
+        entity_id=scanner.id,
+        payload={"scanner_code": scanner.code, "name": scanner.name},
+        actor_user_id=actor_user_id,
+        correlation_id=correlation_id,
+    )
+    db.delete(scanner)
+    db.flush()
+
+
+def _description(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    cleaned = " ".join(raw.split())
+    if not cleaned or len(cleaned) > 400:
+        raise AppError(422, "invalid_scanner", "Enter a description of at most 400 characters.")
+    return cleaned
+
+
+def _place_provider(
+    db: Session,
+    scanner: Scanner,
+    provider: ScannerProvider,
+    provider_name: str | None,
+) -> ScannerProvider:
+    if provider_name is None:
+        return provider
+    label = " ".join(provider_name.split())
+    if not label or len(label) > 120:
+        raise AppError(422, "invalid_scanner", "Enter the provider name.")
+    if label.lower() == provider.name.lower():
+        provider.name = label
+        return provider
+    other = db.scalar(
+        select(ScannerProvider).where(
+            func.lower(ScannerProvider.name) == label.lower(),
+            ScannerProvider.status == "active",
+        )
+    )
+    if other is not None and other.id != provider.id:
+        taken = set(db.scalars(select(Scanner.code).where(Scanner.provider_id == other.id)).all())
+        if scanner.code in taken:
+            scanner.code = _code_for(scanner.name, "scanner", taken)
+        scanner.provider_id = other.id
+        return other
+    provider.name = label
+    provider.monogram = _monogram(label)
+    return provider
 
 
 def create_source_channel(

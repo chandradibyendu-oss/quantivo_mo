@@ -1,8 +1,8 @@
 """Shared Fyers Data API budget for this process.
 
-Standard plan figures, as published for 16 October 2026: 5 calls a second,
-50 a minute, and 5,000 a day. Quotes and History share that allowance.
-History may take 40 of the minute so a quote call still has room.
+Prime plan figures, as published for 16 October 2026: 10 calls a second,
+500 a minute, and 500,000 a day. Quotes and History share that allowance.
+History may take 450 of the minute so a quote call still has room.
 A 429 pauses both. The wait starts at 30 seconds and doubles up to 15 minutes.
 This process cannot see another program on the same Fyers account.
 """
@@ -20,10 +20,10 @@ logger = logging.getLogger("quantivo.quotes")
 
 DataKind = Literal["quotes", "history"]
 
-PER_SECOND = 5
-PER_MINUTE = 50
-PER_DAY = 5_000
-HISTORY_PER_MINUTE = 40
+PER_SECOND = 10
+PER_MINUTE = 500
+PER_DAY = 500_000
+HISTORY_PER_MINUTE = 450
 _PAUSE_START = 30
 _PAUSE_CAP = 15 * 60
 IST = ZoneInfo("Asia/Kolkata")

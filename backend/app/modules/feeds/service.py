@@ -126,7 +126,8 @@ def reader_state(feed: SourceFeed) -> tuple[str, str]:
     if feed.kind == "http_api":
         return (
             "saved",
-            "The HTTP settings are saved. No reader calls that URL yet.",
+            "The worker reads this URL. Intraday is the horizon when the payload omits one. "
+            "That call stays on Actionable through its IST trade date, then it is on All.",
         )
     if get_settings().telegram_login_configured:
         return (

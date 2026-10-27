@@ -370,6 +370,11 @@ def test_rematch_replaces_a_stored_company_name_with_the_nse_symbol(client, db, 
     assert stored.symbol == "HDFCBANK"
     assert stored.match_status == "matched"
     assert is_executable(derived_status(stored, sent_at))
+    stored.provider_note = "target_hit=2026-10-22 10:20"
+    db.commit()
+    assert rematch_channel_names(db) == 0
+    db.refresh(stored)
+    assert stored.provider_note == "target_hit=2026-10-22 10:20"
 
 
 def test_equity_parser_is_refused_for_a_non_equity_channel(client, db):

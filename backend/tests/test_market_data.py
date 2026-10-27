@@ -13,7 +13,6 @@ from app.modules.progress.history import (
 from app.modules.progress.models import MinuteBar
 from app.modules.quotes.budget import (
     HISTORY_PER_MINUTE,
-    PER_DAY,
     clear_data_budget,
     data_paused,
     note_rate_limit,
@@ -29,9 +28,10 @@ IST_OFFSET = datetime(2026, 10, 26, 4, 0, tzinfo=UTC)
 def test_history_keeps_room_in_the_minute_for_a_quote():
     now = IST_OFFSET
     try:
+        gap = timedelta(milliseconds=100)
         for step in range(HISTORY_PER_MINUTE):
-            assert take_data_slot("history", now + timedelta(milliseconds=250 * step))
-        later = now + timedelta(seconds=12)
+            assert take_data_slot("history", now + gap * step)
+        later = now + gap * HISTORY_PER_MINUTE
         assert take_data_slot("history", later) is False
         assert take_data_slot("quotes", later) is True
     finally:
@@ -52,12 +52,13 @@ def test_a_rate_limit_backs_off_and_then_allows_another_call():
         clear_data_budget()
 
 
-def test_the_day_allowance_is_shared():
+def test_the_day_allowance_is_shared(monkeypatch):
+    monkeypatch.setattr("app.modules.quotes.budget.PER_DAY", 3)
     now = IST_OFFSET
     try:
-        for step in range(PER_DAY):
+        for step in range(3):
             assert take_data_slot("quotes", now + timedelta(seconds=2 * step))
-        blocked = now + timedelta(seconds=2 * PER_DAY)
+        blocked = now + timedelta(seconds=8)
         assert take_data_slot("quotes", blocked) is False
         assert take_data_slot("history", blocked) is False
     finally:
@@ -84,14 +85,17 @@ def test_a_failed_refresh_keeps_the_bars_already_read():
 
 
 def test_a_socket_message_keeps_the_percent_from_the_previous_close():
+    from app.modules.quotes.fyers import clear_quote_cache, remember_quote
     from app.modules.quotes.live import clear_live, fresh_ticks
 
     now = IST_OFFSET
+    remember_quote("NSE:SBIN-EQ", Decimal("100"), now)
     remember_tick({"symbol": "NSE:SBIN-EQ", "ltp": "110", "prev_close_price": "100"}, now)
     try:
         found = fresh_ticks({"NSE:SBIN-EQ"}, now)
     finally:
         clear_live()
+        clear_quote_cache()
     assert found["NSE:SBIN-EQ"].price == Decimal("110")
     assert found["NSE:SBIN-EQ"].change_percent == Decimal("10.00")
 

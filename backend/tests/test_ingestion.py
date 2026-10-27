@@ -25,3 +25,22 @@ def test_revision_updates_content_without_changing_publication_time(db):
     assert signal.stop_loss == Decimal("2400.00")
     assert signal.published_at == published_at
     assert db.scalar(select(func.count()).select_from(Signal)) == 1
+
+
+def test_a_repeat_restores_a_note_the_hash_already_records(db):
+    scanner = db.scalar(select(Scanner).where(Scanner.code == SCANNER_CODE))
+    draft = replace(
+        MockManiAdapter().fetch(utcnow())[0],
+        provider_note="target_hit=2026-10-27 10:00",
+    )
+    created = ingest(db, scanner_id=scanner.id, draft=draft, correlation_id="test")
+    assert created is IngestOutcome.CREATED
+    db.commit()
+    signal = db.scalar(select(Signal).where(Signal.external_ref == draft.external_ref))
+    signal.provider_note = None
+    db.commit()
+    restored = ingest(db, scanner_id=scanner.id, draft=draft, correlation_id="test")
+    assert restored is IngestOutcome.REVISED
+    db.commit()
+    db.refresh(signal)
+    assert signal.provider_note == "target_hit=2026-10-27 10:00"

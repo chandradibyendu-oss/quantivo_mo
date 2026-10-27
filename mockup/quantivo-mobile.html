@@ -187,9 +187,9 @@
             <h3>Mani's Channel</h3>
             <p>Mani's</p>
           </div>
-          <button type="button" class="ghost" style="margin-left:auto">Edit</button>
+          <button type="button" class="ghost" style="margin-left:auto">Manage</button>
         </div>
-        <p class="fine">Edit is on the card for an operator. It changes the scanner name, and a channel name when the card lists one. The provider name stays.</p>
+        <p class="fine">Manage opens Admin. One card holds the provider name, the scanner name, and that scanner's channels.</p>
         <p>Register a channel to see its calls. Each channel keeps its own horizon words.</p>
         <p class="meta">Equity · Intraday to 7 days, Short term, Long term. F&amp;O · Intraday. Commodity · Positional.</p>
         <p class="price">₹999 monthly</p>
@@ -276,7 +276,7 @@
         <p class="fine">These are proposed orders that were not sent to Zerodha. Deleting one asks first, removes that saved intent, and leaves the call in place. An order that was sent stays in the list.</p>
         <p>No saved orders.</p>
       </article>
-      <h3>Scanners</h3>
+      <h3>Catalogue</h3>
       <article class="offer">
         <h3>Add a scanner</h3>
         <label class="field">Provider
@@ -285,21 +285,27 @@
         <label class="field">Scanner
           <input placeholder="Scanner name">
         </label>
+        <label class="field">Description
+          <input placeholder="Shown under the scanner name">
+        </label>
         <p class="fine">A new scanner starts with no channels and no price. The same provider name adds another scanner under that provider.</p>
         <button type="button" class="primary">Add scanner</button>
       </article>
       <article class="offer">
-        <h3>Mani's</h3>
+        <h3>Mani's · Mani's Channel</h3>
+        <p class="fine">The provider is shared by every scanner from that publisher. The scanner name is what traders open. Channels belong on this card.</p>
+        <label class="field">Provider name
+          <input value="Mani's">
+        </label>
         <label class="field">Scanner name
           <input value="Mani's Channel">
         </label>
-        <p class="fine">This is the name traders open. Save scanner stores it. The provider name stays.</p>
+        <label class="field">Description
+          <input value="Mani's equity channel. Development sample calls stand in until Telegram is connected.">
+        </label>
         <button type="button" class="primary">Save scanner</button>
-      </article>
-      <h3>Channels</h3>
-      <article class="offer">
-        <h3>Add a channel</h3>
-        <p class="meta">Scanner · Mani's Channel</p>
+        <button type="button" class="ghost">Delete scanner</button>
+        <h3>Channels</h3>
         <label class="field">Channel name
           <input placeholder="F&amp;O">
         </label>
@@ -313,7 +319,7 @@
       </article>
       <article class="offer">
         <h3>Equity</h3>
-        <p class="meta">Mani's Channel · sample until a feed is saved</p>
+        <p class="meta">On Mani's Channel · sample until a feed is saved</p>
         <label class="field">Channel name
           <input value="Equity">
         </label>
@@ -730,6 +736,7 @@
 }
 #qm-app .signal .sym { font-size: 20px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #qm-app .symline { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; }
+#qm-app .stars { color: #8a6a12; font-size: 13px; letter-spacing: 0.4px; }
 #qm-app .side { font-size: 18px; font-weight: 700; }
 #qm-app .buy { color: light-dark(#16804A, #8dcea0); }
 #qm-app .sell { color: light-dark(#C23B3B, #f0a097); }
@@ -1217,6 +1224,12 @@
       var side = el("span", "side " + (signal.side === "BUY" ? "buy" : "sell"), signal.side === "BUY" ? "Buy" : "Sell");
       var head = el("span", "symline");
       head.appendChild(name);
+      if (typeof signal.stars === "number" && signal.stars >= 1 && signal.stars <= 5) {
+        var filled = Math.max(0, Math.min(5, signal.stars));
+        var stars = el("span", "stars", "★★★★★".slice(0, filled) + "☆☆☆☆☆".slice(0, 5 - filled));
+        stars.title = signal.starHint || "The desk's 7-day target touch rating.";
+        head.appendChild(stars);
+      }
       head.appendChild(document.createTextNode(" "));
       head.appendChild(side);
       head.appendChild(guideMark(signal, status));
@@ -1265,6 +1278,12 @@
     host.appendChild(el("p", "meta", "Mani's · Mani's Channel"));
     var title = el("h2", "", signal.symbol);
     host.appendChild(title);
+    if (typeof signal.stars === "number" && signal.stars >= 1 && signal.stars <= 5) {
+      var filledStars = Math.max(0, Math.min(5, signal.stars));
+      var detailStars = el("p", "stars", "★★★★★".slice(0, filledStars) + "☆☆☆☆☆".slice(0, 5 - filledStars));
+      detailStars.title = signal.starHint || "The desk's 7-day target touch rating.";
+      host.appendChild(detailStars);
+    }
     host.appendChild(el("p", "side " + (signal.side === "BUY" ? "buy" : "sell"), (signal.side === "BUY" ? "Buy" : "Sell") + " · " + signal.horizon + " · " + channelLabel(signal.channel) + " · " + signal.exchange + " · lot " + signal.lot + " · " + signal.product + " · " + status.charAt(0).toUpperCase() + status.slice(1)));
     if (warnings[status]) {
       host.appendChild(el("p", "warn", warnings[status]));
@@ -1714,7 +1733,7 @@
       } else if (state.adminKind === "none") {
         state.adminNotice = "Equity stays on the sample.";
       } else if (state.adminKind === "http") {
-        state.adminNotice = "The HTTP settings are saved. No reader calls that URL yet.";
+        state.adminNotice = "The HTTP settings are saved. The worker reads a PDL Sweep URL. Today's calls stay on Actionable through that date. Earlier calls are on All.";
       } else {
         state.adminNotice = "Equity is saved. The shared Telegram login is still set on the worker.";
       }

@@ -144,12 +144,18 @@ def test_a_read_is_reused_for_a_minute_and_a_failure_returns_no_price():
 
 
 def test_a_fresh_socket_price_is_not_read_again_from_the_quote_call():
-    from app.modules.quotes.fyers import clear_quote_cache
+    from app.modules.quotes.fyers import clear_quote_cache, remember_quote
     from app.modules.quotes.live import clear_live, remember_tick
 
     now = datetime(2026, 10, 23, 4, 30, tzinfo=UTC)
+    remember_quote("NSE:SBIN-EQ", Decimal("780"), now)
     remember_tick(
-        {"symbol": "NSE:SBIN-EQ", "type": "sf", "ltp": 785.5, "chp": 1.25},
+        {
+            "symbol": "NSE:SBIN-EQ",
+            "type": "sf",
+            "ltp": 785.5,
+            "prev_close_price": "775.80",
+        },
         now,
     )
 
@@ -172,6 +178,30 @@ def test_a_fresh_socket_price_is_not_read_again_from_the_quote_call():
     assert batch.source == "fyers"
     assert batch.prices[("NSE", "SBIN")] == Decimal("785.5")
     assert batch.changes[("NSE", "SBIN")] == Decimal("1.25")
+
+
+def test_a_socket_price_far_from_the_quote_is_ignored():
+    from app.modules.quotes.fyers import clear_quote_cache, remember_quote
+    from app.modules.quotes.live import clear_live, fresh_ticks, remember_tick
+
+    now = datetime(2026, 10, 27, 9, 20, tzinfo=UTC)
+    code = "NSE:COHANCE-EQ"
+    wild = {"symbol": code, "type": "sf", "ltp": "1605.10", "prev_close_price": "1580"}
+    kept = {"symbol": code, "type": "sf", "ltp": "470.10", "prev_close_price": "463.55"}
+    try:
+        remember_tick(kept, now)
+        assert fresh_ticks({code}, now) == {}
+        remember_quote(code, Decimal("470.10"), now)
+        remember_tick(wild, now)
+        assert fresh_ticks({code}, now) == {}
+        remember_tick(kept, now)
+        assert fresh_ticks({code}, now)[code].price == Decimal("470.10")
+        assert fresh_ticks({code}, now)[code].change_percent == Decimal("1.41")
+        remember_tick(wild, now + timedelta(seconds=1))
+        assert fresh_ticks({code}, now + timedelta(seconds=1))[code].price == Decimal("470.10")
+    finally:
+        clear_live()
+        clear_quote_cache()
 
 
 def test_the_call_carries_the_last_price_and_leaves_quantity_alone(monkeypatch):

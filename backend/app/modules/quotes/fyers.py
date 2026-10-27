@@ -41,6 +41,22 @@ class QuoteRateLimit(Exception):
 QuoteSource = Literal["fyers", "unconfigured", "unavailable"]
 
 
+def quote_anchor(symbol: str) -> Decimal | None:
+    """The last quote for this symbol. A socket tick is not an anchor."""
+
+    with _LOCK:
+        cached = _CACHE.get(symbol)
+    if cached is None or cached[1] is None or cached[1].price <= 0:
+        return None
+    return cached[1].price
+
+
+def remember_quote(symbol: str, price: Decimal, moment: datetime | None = None) -> None:
+    when = moment or utcnow()
+    with _LOCK:
+        _CACHE[symbol] = (when, QuotePrint(price))
+
+
 def clear_quote_cache() -> None:
     with _LOCK:
         _CACHE.clear()

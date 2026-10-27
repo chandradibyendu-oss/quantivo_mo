@@ -67,12 +67,15 @@ class SignalCard(BaseModel):
         "trail",
         "final",
         "stop",
+        "open",
         "stale",
         "expired",
         "no_symbol",
     ]
     guide_label: str
     guide_hint: str
+    stars: int | None = None
+    star_hint: str | None = None
     published_at: datetime
     expires_at: datetime
     provider_name: str

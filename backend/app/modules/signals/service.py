@@ -52,6 +52,22 @@ def ingest(
         )
     )
     if existing is not None and existing.content_hash == digest:
+        if existing.provider_note != draft.provider_note:
+            existing.provider_note = draft.provider_note
+            existing.updated_at = utcnow()
+            record(
+                db,
+                action="signal.revised",
+                entity_type="signal",
+                entity_id=existing.id,
+                payload={
+                    "external_ref": draft.external_ref,
+                    "symbol": draft.symbol,
+                    "status": draft.status,
+                },
+                correlation_id=correlation_id,
+            )
+            return IngestOutcome.REVISED
         return IngestOutcome.UNCHANGED
 
     fields = {

@@ -23,6 +23,7 @@ from app.modules.feeds.telegram_source import find_joined_channels
 from app.modules.scanners.channels import (
     create_scanner,
     create_source_channel,
+    delete_scanner,
     delete_source_channel,
     rename_scanner,
     rename_source_channel,
@@ -78,6 +79,7 @@ def add_scanner(
         provider_name=body.provider_name,
         name=body.name,
         category=body.category,
+        description=body.description,
         actor_user_id=principal.user.id,
         correlation_id=correlation_id,
     )
@@ -96,10 +98,27 @@ def rename_catalogue_scanner(
         db,
         scanner_id=scanner_id,
         name=body.name,
+        provider_name=body.provider_name,
+        description=body.description,
         actor_user_id=principal.user.id,
         correlation_id=correlation_id,
     )
     return ScannerCreated(id=scanner.id, name=scanner.name, provider_name=provider.name)
+
+
+@router.delete("/scanners/{scanner_id}", status_code=204)
+def remove_catalogue_scanner(
+    scanner_id: UUID,
+    principal: Writer,
+    db: Db,
+    correlation_id: CorrelationId,
+) -> None:
+    delete_scanner(
+        db,
+        scanner_id=scanner_id,
+        actor_user_id=principal.user.id,
+        correlation_id=correlation_id,
+    )
 
 
 @router.post("/source-channels", response_model=FeedOut)

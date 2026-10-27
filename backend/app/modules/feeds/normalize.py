@@ -91,7 +91,7 @@ def match_posted_name(
 
 
 def rematch_channel_names(db: Session) -> int:
-    """Apply the NSE list to stored channel calls. The content hash stays as stored."""
+    """Apply the NSE list to stored channel calls. A desk note stays. The hash stays."""
 
     directory = get_equity_directory()
     if directory is None:
@@ -99,13 +99,12 @@ def rematch_channel_names(db: Session) -> int:
     changed = 0
     for signal in db.scalars(select(Signal).where(Signal.origin == "channel")).all():
         symbol, status, note = match_posted_name(signal.symbol, directory)
-        same_symbol = symbol == signal.symbol
-        same_status = status == signal.match_status and note == signal.provider_note
-        if same_symbol and same_status:
+        if symbol == signal.symbol and status == signal.match_status:
             continue
         signal.symbol = symbol
         signal.match_status = status
-        signal.provider_note = note
+        if note is not None or signal.provider_note in (None, _UNMATCHED_NOTE, _AMBIGUOUS_NOTE):
+            signal.provider_note = note
         changed += 1
     return changed
 
