@@ -1,5 +1,8 @@
+import io
 import os
+import urllib.error
 from datetime import datetime
+from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
@@ -7,7 +10,12 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.grant_admin import grant_admin_role
 from app.modules.audit.models import AuditEvent
-from app.modules.brokers.kite import complete_login, session_end
+from app.modules.brokers.kite import (
+    MarginUnavailable,
+    complete_login,
+    equity_order_margin,
+    session_end,
+)
 from app.modules.brokers.kite_store import read_access_token
 from app.modules.brokers.models import BrokerConnection
 from sqlalchemy import select
@@ -158,3 +166,85 @@ def test_complete_login_rejects_a_missing_state(tmp_path, monkeypatch):
         assert caught.code == "kite_sign_in_failed"
     else:
         raise AssertionError("missing state was accepted")
+
+
+class _KiteBody:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return self.payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> bool:
+        return False
+
+
+def test_equity_margin_reads_the_order_total_and_the_available_net(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.brokers.kite.read_access_token",
+        lambda *_args, **_kwargs: _ACCESS,
+    )
+    monkeypatch.setenv("KITE_API_KEY", _KEY)
+    get_settings.cache_clear()
+
+    def opener(request, timeout):
+        assert timeout == 15
+        assert request.get_header("Authorization") == f"token {_KEY}:{_ACCESS}"
+        if request.full_url.endswith("/user/margins"):
+            return _KiteBody(b'{"status":"success","data":{"equity":{"net":50000.5}}}')
+        assert b'"price": 2450.0000' in request.data
+        assert _ACCESS.encode() not in request.data
+        return _KiteBody(b'{"status":"success","data":[{"total":1200.25}]}')
+
+    try:
+        margin = equity_order_margin(
+            "user-1",
+            exchange="NSE",
+            tradingsymbol="RELIANCE",
+            transaction_type="BUY",
+            product="MIS",
+            quantity=100,
+            price=Decimal("2450"),
+            opener=opener,
+        )
+    finally:
+        os.environ.pop("KITE_API_KEY", None)
+        get_settings.cache_clear()
+    assert margin.required == Decimal("1200.25")
+    assert margin.available == Decimal("50000.50")
+
+
+def test_a_refused_margin_read_carries_no_token(monkeypatch):
+    monkeypatch.setattr(
+        "app.modules.brokers.kite.read_access_token",
+        lambda *_args, **_kwargs: _ACCESS,
+    )
+    monkeypatch.setenv("KITE_API_KEY", _KEY)
+    get_settings.cache_clear()
+
+    def opener(request, timeout):
+        raise urllib.error.HTTPError(
+            request.full_url, 403, "no", hdrs=None, fp=io.BytesIO(b"hidden")
+        )
+
+    try:
+        equity_order_margin(
+            "user-1",
+            exchange="NSE",
+            tradingsymbol="RELIANCE",
+            transaction_type="BUY",
+            product="CNC",
+            quantity=1,
+            price=Decimal("10"),
+            opener=opener,
+        )
+    except MarginUnavailable as caught:
+        assert _ACCESS not in str(caught)
+    else:
+        raise AssertionError("a refused margin read was accepted")
+    finally:
+        os.environ.pop("KITE_API_KEY", None)
+        get_settings.cache_clear()

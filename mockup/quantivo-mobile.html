@@ -925,6 +925,8 @@
     confirmed: "",
     ticket: "",
     editing: false,
+    quantity: "",
+    quantityEdited: false,
     draft: null,
     channel: "all",
     scanner: "mani",
@@ -1322,9 +1324,50 @@
     qFacts.appendChild(fact("Capital set aside", profile.ok ? rupee(profile.capital) : state.risk.capital));
     qFacts.appendChild(fact("Maximum loss", profile.ok ? rupee(profile.maxRisk) : state.risk.maxRisk));
     quantivo.appendChild(qFacts);
+    var sizing = quoted;
+    if (state.draft) {
+      var drafted = quote({ lot: signal.lot, trigger: Number(state.draft.trigger), stop: Number(state.draft.stop) });
+      if (drafted.ok) sizing = drafted;
+    }
+    var chosenQty = null;
+    if (status === "active" && sizing.ok) {
+      var typedQty = state.quantityEdited ? state.quantity : String(sizing.quantity);
+      var qtyReason = "";
+      if (!/^[1-9]\d*$/.test(typedQty)) qtyReason = "Enter a whole number.";
+      else if (Number(typedQty) % sizing.lot !== 0) qtyReason = "Quantity must be a whole number of lots of " + sizing.lot + ".";
+      else chosenQty = Number(typedQty);
+      var qtyLabel = el("label", "meta", "Quantity ");
+      var qtyInput = document.createElement("input");
+      qtyInput.setAttribute("data-quantity", "");
+      qtyInput.setAttribute("inputmode", "numeric");
+      qtyInput.setAttribute("aria-label", "Quantity");
+      qtyInput.value = typedQty;
+      qtyLabel.appendChild(qtyInput);
+      quantivo.appendChild(qtyLabel);
+      if (chosenQty != null) {
+        var amountTrigger = state.draft ? Number(state.draft.trigger) : signal.trigger;
+        var amountStop = state.draft ? Number(state.draft.stop) : signal.stop;
+        var amountSide = state.ticket || signal.side;
+        var amountTargets = state.draft
+          ? state.draft.targets.map(function (target) { return [target[0], Number(target[1])]; })
+          : signal.targets;
+        var riskAmount = Math.abs(amountTrigger - amountStop) * chosenQty;
+        var rewardText = shownTargets(amountTargets).filter(function (target) {
+          var reward = amountSide === "SELL" ? amountTrigger - target.price : target.price - amountTrigger;
+          return reward > 0;
+        }).map(function (target) {
+          var reward = amountSide === "SELL" ? amountTrigger - target.price : target.price - amountTrigger;
+          return target.label + " " + rupee(reward * chosenQty);
+        }).join(" · ");
+        quantivo.appendChild(el("p", "meta", "Risk " + rupee(riskAmount) + (rewardText ? ". Reward " + rewardText + "." : ".")));
+      }
+      var lotHint = sizing.lot > 1 ? " Use a multiple of " + sizing.lot + "." : "";
+      quantivo.appendChild(el("p", "meta", "Suggested " + sizing.quantity + "." + lotHint + " Zerodha checks the margin when the session is connected."));
+      if (qtyReason) quantivo.appendChild(el("p", "warn", qtyReason));
+    }
     if (!quoted.ok) quantivo.appendChild(el("p", "warn", quoted.reason));
-    quantivo.appendChild(el("p", "fine", "Quantity = floor(maximum rupee risk / per-share risk), then rounded down to the lot size and capped. Capital allocation is cash set aside, not the amount at risk."));
-    quantivo.appendChild(el("p", "fine", "Available broker funds were not checked. Broker fund balances are not connected in this build."));
+    quantivo.appendChild(el("p", "fine", "Suggested quantity = floor(maximum rupee risk / per-share risk), then rounded down to the lot size and capped. Capital allocation is cash set aside, not the amount at risk."));
+    quantivo.appendChild(el("p", "fine", "Another whole number of lots can be entered while the call can be confirmed. When Zerodha is signed in, the quantity is kept only if Zerodha shows enough margin."));
     split.appendChild(provider);
     split.appendChild(quantivo);
     host.appendChild(split);
@@ -1361,7 +1404,7 @@
       if (state.ticket && state.draft) {
         var ticketQuote = quote({ lot: signal.lot, trigger: Number(state.draft.trigger), stop: Number(state.draft.stop) });
         var sideOk = state.ticket === "BUY" ? Number(state.draft.stop) < Number(state.draft.trigger) : Number(state.draft.stop) > Number(state.draft.trigger);
-        host.appendChild(el("p", "meta", (state.ticket === "BUY" ? "Buy " : "Sell ") + signal.symbol + ". Prices start from the call. Quantity follows your maximum loss."));
+        host.appendChild(el("p", "meta", (state.ticket === "BUY" ? "Buy " : "Sell ") + signal.symbol + ". Prices start from the call. Quantity starts from your maximum loss."));
         if (state.editing) {
           host.appendChild(draftField("Trigger", "trigger"));
           host.appendChild(draftField("Stop", "stop"));
@@ -1391,8 +1434,8 @@
         confirm.type = "button";
         confirm.className = "primary";
         confirm.setAttribute("data-action", "confirm");
-        confirm.disabled = state.broker !== "connected" || !sideOk || !ticketQuote.ok;
-        confirm.textContent = "Confirm " + (state.ticket === "BUY" ? "buy" : "sell") + (ticketQuote.ok ? " " + ticketQuote.quantity : "") + " · " + state.product;
+        confirm.disabled = state.broker !== "connected" || !sideOk || !ticketQuote.ok || chosenQty == null;
+        confirm.textContent = "Confirm " + (state.ticket === "BUY" ? "buy" : "sell") + (chosenQty == null ? "" : " " + chosenQty) + " · " + state.product;
         host.appendChild(confirm);
       }
     }
@@ -1435,7 +1478,9 @@
         return;
       }
       host.appendChild(el("h3", "", saved.symbol + " · Buy"));
-      host.appendChild(el("p", "meta", "Proposed · " + state.product));
+      var savedQuote = quote({ lot: saved.lot, trigger: Number(state.draft.trigger), stop: Number(state.draft.stop) });
+      var savedQty = state.quantityEdited ? state.quantity : (savedQuote.ok ? String(savedQuote.quantity) : "");
+      host.appendChild(el("p", "meta", "Proposed · " + state.product + (savedQty ? " · " + savedQty : "")));
       host.appendChild(el("p", "meta", "Trigger " + state.draft.trigger + " · Stop " + state.draft.stop));
       host.appendChild(el("p", "fine", "Saved. Zerodha was not sent this order. The stop and targets stay inactive until Zerodha confirms them."));
       var removeOrder = document.createElement("button");
@@ -1595,6 +1640,12 @@
     if (input.matches("[data-name]")) state.name = input.value;
     if (input.matches("[data-otp]")) state.otpDraft = input.value;
     if (input.matches("[data-admin-channel]")) state.adminChannel = input.value.trim();
+    if (input.matches("[data-quantity]")) {
+      state.quantityEdited = true;
+      state.quantity = input.value.replace(/\D/g, "");
+      state.confirmed = "";
+      paint();
+    }
     if (input.matches("[data-draft]") && state.draft) {
       var draftFieldName = input.getAttribute("data-draft");
       if (draftFieldName === "target") state.draft.targets[Number(input.getAttribute("data-index"))][1] = input.value;
@@ -1688,6 +1739,8 @@
       var chosen = findSignal(state.selected);
       state.ticket = button.getAttribute("data-side");
       state.editing = false;
+      state.quantityEdited = false;
+      state.quantity = "";
       state.confirmed = "";
       state.draft = {
         trigger: String(chosen.trigger),

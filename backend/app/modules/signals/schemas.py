@@ -183,3 +183,4 @@ class OrderPreviewIn(BaseModel):
     trigger_price: str = Field(pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
     stop_loss: str = Field(pattern=r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
     targets: list[OrderTargetIn] = Field(min_length=1, max_length=4)
+    quantity: int | None = Field(default=None, gt=0, le=1_000_000)

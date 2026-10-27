@@ -27,7 +27,7 @@ Done means the behavior is in the API or the app and covered by the Phase 1 test
 - [x] Development sign-in. The one-time code is returned only in development and test
 - [x] Sample feed, signal list, and signal detail. The sample does not call Telegram
 - [x] Each call stores segment, source channel, and the horizon words as published
-- [x] Quantity from maximum loss. Capital and risk-reward do not change the share count
+- [x] Quantity from maximum loss. Capital and risk-reward do not change the share count. The ticket starts from that quantity on every scanner. While the call is executable, another whole-lot quantity can be confirmed. A call that is not executable shows that quantity and does not take another. The field shows the rupee risk and the rupee reward for that quantity. A connected Zerodha session keeps the quantity only when the available margin covers it
 - [x] Zerodha sign-in, then one saved intent for a call. No broker order is written. The call shows that Zerodha session
 - [x] A trader signs in on Zerodha from Account. The Kite app key and secret are saved once on Admin. The access token stays in the server secret directory until 6:00 AM IST. This build does not send an order
 - [x] Automated tests for that path

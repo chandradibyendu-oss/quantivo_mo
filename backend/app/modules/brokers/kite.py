@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from secrets import token_urlsafe
 from zoneinfo import ZoneInfo
 
@@ -28,6 +29,8 @@ logger = logging.getLogger("quantivo.brokers")
 IST = ZoneInfo("Asia/Kolkata")
 LOGIN_URL = "https://kite.zerodha.com/connect/login"
 TOKEN_URL = "https://api.kite.trade/session/token"
+MARGINS_URL = "https://api.kite.trade/user/margins"
+ORDER_MARGIN_URL = "https://api.kite.trade/margins/orders"
 _STATE_TTL = timedelta(minutes=10)
 _APP_MISSING = "Save the Kite Connect api key and api secret on Admin configuration."
 _SIGN_IN_FAILED = "Zerodha did not connect. Return to Account and sign in again."
@@ -189,6 +192,65 @@ def cleared_message() -> str:
     return _CLEARED
 
 
+class MarginUnavailable(Exception):
+    """Zerodha did not return a usable equity margin. The message stays empty."""
+
+
+@dataclass(frozen=True)
+class OrderMargin:
+    required: Decimal
+    available: Decimal
+
+
+def equity_order_margin(
+    user_id: str,
+    *,
+    exchange: str,
+    tradingsymbol: str,
+    transaction_type: str,
+    product: str,
+    quantity: int,
+    price: Decimal,
+    opener=None,
+    secret_root=None,
+) -> OrderMargin:
+    """Read the margin an equity order needs and the equity margin Zerodha shows available."""
+
+    token = read_access_token(user_id, secret_root=secret_root)
+    settings = get_settings()
+    api_key = settings.kite_api_key.strip()
+    if not token or not api_key:
+        raise MarginUnavailable
+    headers = {
+        "X-Kite-Version": "3",
+        "Authorization": f"token {api_key}:{token}",
+    }
+    available = _equity_net(_get(MARGINS_URL, headers, opener))
+    required = _order_total(
+        _post_json(
+            ORDER_MARGIN_URL,
+            [
+                {
+                    "exchange": exchange,
+                    "tradingsymbol": tradingsymbol,
+                    "transaction_type": transaction_type,
+                    "variety": "regular",
+                    "product": product,
+                    "order_type": "LIMIT",
+                    "quantity": quantity,
+                    "price": price.quantize(Decimal("0.0001")),
+                    "trigger_price": 0,
+                }
+            ],
+            headers,
+            opener,
+        )
+    )
+    if available is None or required is None:
+        raise MarginUnavailable
+    return OrderMargin(required, available)
+
+
 def _connected(end: datetime, client_id: str) -> str:
     shown = end.astimezone(IST)
     when = f"{shown.day} {shown.strftime('%b %Y')}"
@@ -250,6 +312,72 @@ def _post(url: str, form: dict[str, str]) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("kite token exchange failed")
     return payload
+
+
+def _get(url: str, headers: dict[str, str], opener) -> dict:
+    request = urllib.request.Request(url, method="GET", headers=headers)
+    return _load(request, opener)
+
+
+def _post_json(url: str, payload: list, headers: dict[str, str], opener) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=_dumps(payload).encode(),
+        method="POST",
+        headers={**headers, "Content-Type": "application/json"},
+    )
+    return _load(request, opener)
+
+
+def _load(request: urllib.request.Request, opener) -> dict:
+    try:
+        with (opener or urllib.request.urlopen)(request, timeout=15) as response:
+            payload = json.loads(response.read().decode(), parse_float=Decimal)
+    except urllib.error.HTTPError as error:
+        error.read()
+        raise MarginUnavailable from None
+    except (OSError, ValueError, TimeoutError, json.JSONDecodeError):
+        raise MarginUnavailable from None
+    if not isinstance(payload, dict) or payload.get("status") != "success":
+        raise MarginUnavailable
+    return payload
+
+
+def _equity_net(payload: dict) -> Decimal | None:
+    data = payload.get("data")
+    equity = data.get("equity") if isinstance(data, dict) else None
+    net = equity.get("net") if isinstance(equity, dict) else None
+    return _decimal(net)
+
+
+def _order_total(payload: dict) -> Decimal | None:
+    data = payload.get("data")
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        return None
+    return _decimal(data[0].get("total"))
+
+
+def _decimal(value: object) -> Decimal | None:
+    if isinstance(value, bool) or not isinstance(value, (Decimal, int, str)):
+        return None
+    try:
+        parsed = Decimal(value)
+    except (InvalidOperation, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed.quantize(Decimal("0.01"))
+
+
+def _dumps(payload: list) -> str:
+    text = json.dumps(payload, default=_decimal_token)
+    return re.sub(r'"__DECIMAL__([0-9.]+)"', r"\1", text)
+
+
+def _decimal_token(value: object) -> str:
+    if isinstance(value, Decimal):
+        return f"__DECIMAL__{format(value, 'f')}"
+    raise TypeError
 
 
 def _delete(url: str) -> None:

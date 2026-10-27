@@ -92,11 +92,13 @@ flowchart TD
   state -->|No| rejectState[409 signal_not_actionable<br/>audit then no order]
   state -->|Yes| product{Product allowed?}
   product -->|No| rejectProduct[422 product_not_allowed]
-  product -->|Yes| qty{Quantity equals server result?}
-  qty -->|No| rejectQty[409 quantity_mismatch]
+  product -->|Yes| qty{Quantity is a whole number of lots?}
+  qty -->|No| rejectQty[409 quantity_not_a_lot or quantity_mismatch]
   qty -->|Yes| broker{Zerodha session present?}
   broker -->|No| rejectBroker[409 broker_not_connected<br/>No order_intent row]
-  broker -->|Yes| save[One proposed order_intent<br/>No broker_order row]
+  broker -->|Yes| margin{Available margin covers the quantity?}
+  margin -->|No| rejectMargin[409 insufficient_margin or margin_unavailable]
+  margin -->|Yes| save[One proposed order_intent<br/>No broker_order row]
 ```
 
 Each rejection that passes the existence check commits an audit row. A passing confirmation stores one proposed intent for that trader and call. The same confirmation key returns that row. Zerodha is not asked to place the order. The stop and targets on the intent are not active. The broker adapter raises if something calls place, modify, or cancel anyway.

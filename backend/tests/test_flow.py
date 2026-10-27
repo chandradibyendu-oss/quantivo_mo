@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -7,11 +8,12 @@ import pytest
 from app.core.config import get_settings
 from app.grant_admin import grant_admin_role
 from app.modules.audit.models import AuditEvent
-from app.modules.brokers.kite import session_end
+from app.modules.brokers.kite import OrderMargin, session_end
 from app.modules.brokers.kite_store import save_access_token
 from app.modules.brokers.service import record_zerodha
 from app.modules.identity.models import User
 from app.modules.orders.models import BrokerOrder, OrderIntent
+from app.modules.quotes.fyers import QuoteBatch
 from app.modules.scanners.mock_mani import SCANNER_CODE
 from app.modules.scanners.models import Scanner
 from app.modules.subscriptions.models import PaymentTransaction, ScannerSubscription
@@ -40,6 +42,11 @@ def _prepare(client, phone="9876543210"):
 
 
 def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path, monkeypatch):
+    def quiet(*_args, **_kwargs):
+        return QuoteBatch("unavailable", {})
+
+    monkeypatch.setattr("app.modules.quotes.fyers.read_last_prices", quiet)
+    monkeypatch.setattr("app.modules.signals.views.read_last_prices", quiet)
     headers, _scanner, _activation, synced = _prepare(client)
     assert synced["created"] == 5
 
@@ -79,11 +86,11 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
             "signal_id": by_symbol["RELIANCE"]["id"],
             "idempotency_key": "reliance-wrong-qty",
             "product": "MIS",
-            "quantity": 1,
+            "quantity": 28,
         },
     )
     assert wrong_quantity.status_code == 409
-    assert wrong_quantity.json()["error"]["code"] == "quantity_mismatch"
+    assert wrong_quantity.json()["error"]["code"] == "broker_not_connected"
 
     not_connected = client.post(
         "/api/v1/orders",
@@ -105,6 +112,10 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
     try:
         user = db.scalar(select(User).where(User.phone_e164 == "+919876543210"))
         assert user is not None
+        monkeypatch.setattr(
+            "app.modules.orders.service.equity_order_margin",
+            lambda *_args, **_kwargs: OrderMargin(Decimal("10.00"), Decimal("1000000.00")),
+        )
         save_access_token(str(user.id), "kiteAccessTokenValue123", secret_root=tmp_path)
         record_zerodha(
             db,
@@ -166,6 +177,19 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
         )
         assert changed.status_code == 409
         assert changed.json()["error"]["code"] == "idempotency_conflict"
+        smaller = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-smaller",
+                "product": "MIS",
+                "quantity": 10,
+            },
+        )
+        assert smaller.status_code == 200
+        assert smaller.json()["id"] == saved.json()["id"]
+        assert smaller.json()["quantity"] == 10
         preview = client.post(
             "/api/v1/orders/preview",
             headers=headers,
@@ -205,10 +229,40 @@ def test_vertical_slice_shows_quantities_and_refuses_orders(client, db, tmp_path
         assert edited.json()["id"] == saved.json()["id"]
         assert edited.json()["stop_loss"] == "2400.00"
         assert edited.json()["quantity"] == preview.json()["quantity"]
+        larger = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-larger",
+                "product": "MIS",
+                "quantity": 100,
+            },
+        )
+        assert larger.status_code == 200
+        assert larger.json()["id"] == saved.json()["id"]
+        assert larger.json()["quantity"] == 100
+        monkeypatch.setattr(
+            "app.modules.orders.service.equity_order_margin",
+            lambda *_args, **_kwargs: OrderMargin(Decimal("900000.00"), Decimal("1000.00")),
+        )
+        short = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "signal_id": by_symbol["RELIANCE"]["id"],
+                "idempotency_key": "reliance-short",
+                "product": "MIS",
+                "quantity": 500,
+            },
+        )
+        assert short.status_code == 409
+        assert short.json()["error"]["code"] == "insufficient_margin"
         listed = client.get("/api/v1/orders", headers=headers)
         assert len(listed.json()) == 1
         assert listed.json()[0]["id"] == saved.json()["id"]
-        assert listed.json()[0]["stop_loss"] == "2400.00"
+        assert listed.json()[0]["quantity"] == 100
+        assert listed.json()[0]["stop_loss"] == "2432.00"
         order_id = saved.json()["id"]
         blocked_delete = client.delete(f"/api/v1/admin/orders/{order_id}", headers=headers)
         assert blocked_delete.status_code == 403

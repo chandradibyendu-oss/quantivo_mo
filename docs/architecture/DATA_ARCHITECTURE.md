@@ -433,6 +433,6 @@ The signal list and the signal detail only read. Suggested quantity is `floor(ma
 | --- | --- |
 | Development one-time code | Returned by the API only when the environment is development or test. Stored as `otp_challenges.code_hash` |
 | Stale, and the warning on a call | Derived at read from the name match, `expires_at`, the horizon words, and the admin clocks. Same-day Intraday and BTST start at 30 minutes. Short term and long term start at 30 days. Unmatched and ambiguous names are not executable |
-| Suggested quantity | Derived from `risk_profiles` and the signal trigger, stop, and lot. The client quantity is checked again and rejected if it differs |
+| Suggested quantity | Derived from `risk_profiles` and the signal trigger, stop, and lot. The trader may confirm another whole-lot quantity. A connected Zerodha session keeps it only when the available margin covers it |
 | Risk-reward | Derived from trigger, stop, and each target. It does not change quantity |
 | Feed mode `mock` | A response field. The rows are still normal `signals` rows |

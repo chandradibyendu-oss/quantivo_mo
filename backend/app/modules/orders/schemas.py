@@ -16,6 +16,9 @@ class OrderPreviewOut(BaseModel):
     trigger_price: str
     stop_loss: str
     targets: list[TargetOut]
+    margin_required: str | None = None
+    margin_available: str | None = None
+    margin_reason: str | None = None
 
 
 class OrderBookOut(BaseModel):

@@ -20,7 +20,7 @@ Before changing product behavior, follow `docs/REQUIREMENTS.md`, `docs/IMPLEMENT
 - Suggested quantity is `floor(maximum rupee risk / abs(trigger - stop))`, then rounded down to the lot and cut by the quantity and exposure caps.
 - Capital set aside is not the numerator. Risk-reward is shown from the trigger and does not change quantity.
 - If one lot would lose more than the maximum risk, quantity is none and the reason is shown. F&O and commodity use the contract lot.
-- Label provider prices apart from the Quantivo quantity. The server recalculates quantity and rejects a different client value.
+- Label provider prices apart from the Quantivo quantity. The server recalculates the suggested quantity. While the call is executable, another whole-lot quantity can be confirmed. A call that is not executable shows that quantity and does not take another. A quantity that is not a whole number of lots is rejected. When a broker session is connected, the quantity is kept only when that broker shows enough margin.
 
 ```python
 # Bad: quantity = floor(capital / trigger)

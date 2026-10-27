@@ -116,9 +116,9 @@ Challenges expire, older unused challenges are consumed when a new one is issued
 
 **Context.** Traders often name a sum they will deploy and a smaller sum they will lose. Using the deployed sum as the risk numerator overstates size.
 
-**Decision.** `quantity = floor(max risk INR / abs(trigger - stop))`, then round down to lot size and apply the optional quantity and exposure caps. The stop must sit on the losing side of the trigger. Maximum risk cannot exceed capital allocation. Capital allocation is stored and displayed and is not an input to the division. The server repeats the calculation at submit time. M1 does not pretend to have checked broker funds.
+**Decision.** `quantity = floor(max risk INR / abs(trigger - stop))`, then round down to lot size and apply the optional quantity and exposure caps. The stop must sit on the losing side of the trigger. Maximum risk cannot exceed capital allocation. Capital allocation is stored and displayed and is not an input to the division. The server repeats the calculation at submit time and treats the result as a suggestion. When Zerodha is connected, confirm keeps another whole-lot quantity only when Zerodha shows enough margin. When it is not connected, no margin is read.
 
-**Consequences.** The detail screen can show the formula in words. A client that sends its own quantity fails the check when the numbers differ.
+**Consequences.** The detail screen can show the formula in words. The ticket starts from that quantity. While the call is executable, the trader may confirm another quantity that is a whole number of lots. A call that is not executable shows that quantity and does not take another. The suggested quantity is not a ceiling. A quantity that is not a whole number of lots is rejected. When Zerodha is connected, the quantity is kept only when Zerodha shows enough margin.
 
 **Rejected.** Quantity equals capital divided by price. Floating-point money. Trusting the quantity posted by the phone. Changing the quantity because the reward is larger or smaller. Risk-reward is defined in [ADR-020](#adr-020--risk-reward-is-shown-and-does-not-size-the-trade).
 
@@ -250,7 +250,7 @@ Challenges expire, older unused challenges are consumed when a new one is issued
 
 **Decision.** Risk is the absolute distance from the trigger to the stop. Reward for a target is the absolute distance from the trigger to that target. Risk-reward is reward divided by risk. The detail screen may show it. Quantity stays the ADR-009 calculation. A better reward does not increase the quantity. A worse reward does not reduce it. The trader skips the call instead. If the broker fills at a price other than the trigger, the realized risk-reward is measured from that fill, not from the original trigger.
 
-**Consequences.** Targets remain provider data. They are required for a call to be understandable, and they are not read by the quantity function.
+**Consequences.** Targets remain provider data. They are required for a call to be understandable, and they are not read by the quantity function. The quantity field shows the rupee risk and the rupee reward for the quantity entered. Those amounts follow the quantity and do not change it.
 
 **Rejected.** Sizing up high risk-reward calls. Hiding calls below a fixed risk-reward cutoff. Using the live price as the entry when the signal still has its own trigger and no fill exists.
 
@@ -424,11 +424,11 @@ The home row is All, then each source channel by its display name. All is the ca
 
 **Context.** The trader should be able to accept a call in two taps, with the call's prices already filled in, and change those prices when they want to. The order still cannot leave this machine. Zerodha rejects an order that does not come from a registered static IP, and live trading stays off until that path is reviewed.
 
-**Decision.** Buy and Sell open a ticket filled from the call. The product starts as MIS, and the trader may change it to CNC. The trader may also edit the trigger, stop, and targets. The server recalculates quantity from the trigger and the stop and rejects a different quantity. Confirm writes one `proposed` intent for that trader and call, including the prices they confirmed. The same confirmation key returns that row. An unsent intent is updated when they confirm different prices. No broker order is written, and the stop and targets are not shown as active. An operator can delete a proposed intent that has no broker order. The delete asks first and is audited. The call stays. An intent that was sent is not deleted.
+**Decision.** Buy and Sell open a ticket filled from the call. The product starts as MIS, and the trader may change it to CNC. The trader may also edit the trigger, stop, and targets. The server recalculates the suggested quantity from the trigger and the stop. The ticket starts from that quantity on every scanner, and the trader may confirm another quantity that is a whole number of lots. When the Zerodha session is connected, that quantity is kept only when Zerodha shows enough equity margin. A failed margin read stores nothing. Confirm writes one `proposed` intent for that trader and call, including the prices and quantity they confirmed. The same confirmation key returns that row. An unsent intent is updated when they confirm different prices or a different quantity. No broker order is written, and the stop and targets are not shown as active. An operator can delete a proposed intent that has no broker order. The delete asks first and is audited. The call stays. An intent that was sent is not deleted.
 
 **Consequences.** The phone says the order was saved and that Zerodha was not sent it. Orders lists those saved intents for the signed-in trader, newest first, with the status. Admin lists every unsent proposed intent and can remove one. The same delete is on Orders when the signed-in person is an operator. A fill, an active stop, and a real Kite order wait for the reviewed broker path.
 
-**Rejected.** Sending the order to Zerodha from the developer machine. Marking the stop active before a broker confirms it. Letting the phone choose a quantity other than the server's figure. Creating a second intent when the same confirmation is tapped twice.
+**Rejected.** Sending the order to Zerodha from the developer machine. Marking the stop active before a broker confirms it. Letting the phone choose a quantity that is not a whole number of lots. Saving a quantity Zerodha's available margin does not cover. Creating a second intent when the same confirmation is tapped twice.
 
 ## ADR-033 — PDL Sweep is read from the other app's live URL
 

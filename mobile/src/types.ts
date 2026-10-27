@@ -134,6 +134,9 @@ export type OrderPreview = {
   trigger_price: string;
   stop_loss: string;
   targets: TargetOut[];
+  margin_required?: string | null;
+  margin_available?: string | null;
+  margin_reason?: string | null;
 };
 
 export type AdminOrderRow = {

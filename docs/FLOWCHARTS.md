@@ -97,9 +97,9 @@ Last traded price can sit on the same line as the trigger, the stop, and the tar
 
 ## Buy and Sell
 
-Home is one scanner. A registered channel shows its calls. Equity, F&O, or Commodity changes the view and does not grant access. An unregistered channel says so and shows no calls. Buy and Sell appear on an open call when that call is still executable and the server quantity is at least one lot. The ticket opens filled from the call. The trader can edit the product, trigger, stop, and targets. The server recalculates quantity from the edited trigger and stop. Risk-reward is shown from the trigger and does not change the quantity. Preview stores nothing.
+Home is one scanner. A registered channel shows its calls. Equity, F&O, or Commodity changes the view and does not grant access. An unregistered channel says so and shows no calls. Buy and Sell appear on an open call when that call is still executable and the server quantity is at least one lot. The ticket opens filled from the call. While the call is executable, the trader can edit the product, trigger, stop, targets, and quantity. A call that is not executable shows the suggested quantity and does not take another. The server recalculates the suggested quantity from the edited trigger and stop. The ticket starts from that suggestion. Another quantity is kept when it is a whole number of lots. When Zerodha is connected, the quantity is kept only when Zerodha shows enough margin. Risk-reward is shown from the trigger and does not change the quantity. The rupee risk and the rupee reward under the quantity follow the quantity entered. Preview stores nothing.
 
-Confirm stores one `proposed` row in `order_intents` for that trader and call: side, product, trigger, stop, targets, and the server quantity. Orders lists those rows for the signed-in trader. The idempotency key is unique. A second tap with the same prices returns that row. An edit of an unsent intent updates the same row. This build stops there. Zerodha is not called. `broker_orders`, `trade_executions`, and `position_snapshots` stay empty. The stop and targets stay inactive until a later broker confirmation.
+Confirm stores one `proposed` row in `order_intents` for that trader and call: side, product, trigger, stop, targets, and the confirmed quantity. Orders lists those rows for the signed-in trader. The idempotency key is unique. A second tap with the same prices and quantity returns that row. An edit of an unsent intent updates the same row. This build stops there. Zerodha is not called. `broker_orders`, `trade_executions`, and `position_snapshots` stay empty. The stop and targets stay inactive until a later broker confirmation.
 
 The broker send below is the path for when submission exists. The intent is already committed before that call. A broker response of accepted is not a fill. Fills and positions are written from what the broker reports. An unknown response is reconciled before any retry.
 
@@ -112,16 +112,16 @@ flowchart TD
   openCall --> ready{Executable, and quantity is at least one lot?}
   ready -->|No| explain[Show why Buy and Sell stay off]
   ready -->|Yes| ticket[Buy or Sell opens the ticket from the call]
-  ticket --> edit{Trader edits a price?}
-  edit -->|Yes| preview[Preview recalculates quantity and stores nothing]
+  ticket --> edit{Trader edits a price or the quantity?}
+  edit -->|Yes| preview[Preview recalculates the maximum and stores nothing]
   preview --> confirm{Trader confirms?}
   edit -->|No| confirm
   confirm -->|No| idle[Nothing is saved]
   confirm -->|Yes| checks{Server checks pass?}
   checks -->|No| refused[Audit the reason and save no intent]
   checks -->|Yes| same{This trader and call already have an unsent intent?}
-  same -->|Same prices| returnRow[Return the saved intent]
-  same -->|Edited prices| updateRow[Update that same intent]
+  same -->|Same prices and quantity| returnRow[Return the saved intent]
+  same -->|Edited prices or quantity| updateRow[Update that same intent]
   same -->|No| insertRow[Insert one proposed intent]
   returnRow --> saved[order_intents saved]
   updateRow --> saved
@@ -158,13 +158,17 @@ A check that fails after the call is known writes an audit row. It does not writ
 | Call | The call is unmatched, stale, or expired | Buy and Sell stay off | None |
 | Call | The mark is Not valid, Caution, a trail, Final, or Stop, or the last price has traded through the first target or the stop | Buy and Sell stay off | None |
 | Call | One lot would lose more than the maximum rupee risk | Quantity is none. Buy and Sell stay off | None |
-| Ticket | The trader edits the trigger or the stop | Quantity is recalculated. The ticket stays open | None. Preview writes nothing |
+| Ticket | The trader edits the trigger or the stop | The maximum quantity is recalculated. The ticket stays open | None. Preview writes nothing |
+| Ticket | The trader enters another whole-lot quantity | That quantity stays on the ticket | None. Preview writes nothing |
 | Confirm | The call is no longer executable | 409 `signal_not_actionable` | Audit only |
 | Confirm | The product is outside the risk profile | 422 `product_not_allowed` | Audit only |
-| Confirm | The quantity is not the server quantity | 409 `quantity_mismatch` | Audit only |
+| Confirm | The quantity is not a whole number of lots | 409 `quantity_not_a_lot` | Audit only |
+| Confirm | The suggested quantity cannot be calculated | 409 `quantity_mismatch` | Audit only |
+| Confirm | Zerodha is connected and the margin does not cover the quantity | 409 `insufficient_margin` | Audit only |
+| Confirm | Zerodha is connected and the margin cannot be read | 409 `margin_unavailable` | Audit only |
 | Confirm | Zerodha is not signed in | 409 `broker_not_connected` | Audit only |
-| Confirm | The same confirmation key was saved with different prices | 409 `idempotency_conflict` | The earlier intent stays |
-| Confirm | The same key, or the same open call, has the same prices | The existing intent is returned | No second row |
+| Confirm | The same confirmation key was saved with different prices or a different quantity | 409 `idempotency_conflict` | The earlier intent stays |
+| Confirm | The same key, or the same open call, has the same prices and quantity | The existing intent is returned | No second row |
 | Confirm | The checks pass | One `proposed` intent | `order_intents` and an `order.confirmed` audit |
 | Broker send | The broker rejects the entry | The intent is rejected | No fill and no position are invented |
 | Broker send | The response is missing, timed out, or unknown | Fail closed | Reconcile with the broker before another send |

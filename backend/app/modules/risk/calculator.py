@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
 
 FORMULA = (
-    "Quantity = floor(maximum rupee risk / per-share risk), then rounded down to the lot size "
-    "and capped by the quantity and exposure limits. Capital allocation is cash set aside for "
-    "the trade, not the amount at risk."
+    "Suggested quantity = floor(maximum rupee risk / per-share risk), then rounded down to the "
+    "lot size and capped by the quantity and exposure limits. Capital allocation is cash set "
+    "aside for the trade, not the amount at risk."
 )
 FUNDS_NOTE = (
-    "Available broker funds were not checked. Broker fund balances are not connected in this build."
+    "Another whole number of lots can be entered while the call can be confirmed. When Zerodha "
+    "is signed in, the quantity is kept only if Zerodha shows enough margin. This build still "
+    "does not send the order."
 )
 
 
@@ -46,6 +48,14 @@ def _floor_to_lot(quantity: int, lot_size: int) -> int:
     if quantity < lot_size:
         return 0
     return quantity - (quantity % lot_size)
+
+
+def quantity_refusal(requested: int, lot_size: int) -> str | None:
+    """Refuse a quantity that is not a whole number of lots."""
+
+    if lot_size < 1 or requested < lot_size or requested % lot_size != 0:
+        return f"Quantity must be a whole number of lots of {lot_size}."
+    return None
 
 
 def calculate(inputs: RiskInputs) -> RiskResult:

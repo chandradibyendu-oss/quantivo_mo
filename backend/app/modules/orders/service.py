@@ -12,13 +12,14 @@ from app.core.deps import Principal
 from app.core.errors import AppError
 from app.core.money import money
 from app.modules.audit.service import commit_and_raise, record
+from app.modules.brokers.kite import MarginUnavailable, equity_order_margin
 from app.modules.brokers.service import broker_for_trader
 from app.modules.feeds.equity_parser import align_prices
 from app.modules.identity.models import User
 from app.modules.orders.models import BrokerOrder, OrderIntent
 from app.modules.orders.schemas import AdminOrderOut, OrderBookOut, OrderIntentOut, OrderPreviewOut
 from app.modules.progress.marks import quoted_past_entry, terminal_mark
-from app.modules.risk.calculator import RiskInputs, RiskResult, calculate
+from app.modules.risk.calculator import RiskInputs, RiskResult, calculate, quantity_refusal
 from app.modules.risk.service import get_profile
 from app.modules.signals.clocks import load_clocks
 from app.modules.signals.models import Signal
@@ -27,10 +28,21 @@ from app.modules.signals.status import derived_status, is_executable
 from app.modules.subscriptions.service import is_entitled
 
 _PRICE = re.compile(r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,4})?$")
+_TICKER = re.compile(r"^[A-Z][A-Z0-9&.\-]{0,31}$")
+_MARGIN_UNAVAILABLE = "Zerodha did not return the available margin. No order was saved."
+_MARGIN_CASH = "Zerodha margin is checked for an NSE cash symbol. No order was saved."
 SAVED = (
     "Saved. Zerodha was not sent this order. "
     "The stop and targets stay inactive until Zerodha confirms them."
 )
+
+
+@dataclass(frozen=True)
+class _MarginCheck:
+    required: Decimal | None
+    available: Decimal | None
+    code: str | None
+    message: str | None
 
 
 @dataclass(frozen=True)
@@ -59,6 +71,9 @@ def preview_order(db: Session, principal: Principal, body: OrderPreviewIn) -> Or
         raise AppError(422, "product_not_allowed", "Your risk profile does not allow this product.")
     side, trigger, stop, targets = _prices(signal, body)
     result = _risk(signal, profile, side, trigger, stop)
+    margin = _MarginCheck(None, None, None, None)
+    if result.ok and body.quantity is not None:
+        margin = _margin(db, principal.user.id, signal, body.product, side, trigger, body.quantity)
     return OrderPreviewOut(
         ok=result.ok,
         quantity=result.quantity if result.ok else None,
@@ -68,6 +83,9 @@ def preview_order(db: Session, principal: Principal, body: OrderPreviewIn) -> Or
         trigger_price=money(trigger) or "0.00",
         stop_loss=money(stop) or "0.00",
         targets=[TargetOut(label=item["label"], price=item["price"]) for item in targets],
+        margin_required=None if margin.required is None else money(margin.required),
+        margin_available=None if margin.available is None else money(margin.available),
+        margin_reason=margin.message,
     )
 
 
@@ -97,23 +115,42 @@ def confirm_order(
         )
     side, trigger, stop, targets = _prices(signal, body)
     result = _risk(signal, profile, side, trigger, stop)
-    if not result.ok or result.quantity != body.quantity:
+    refusal = _quantity_refusal(body.quantity, result, signal.lot_size)
+    if refusal is not None:
+        code, message = refusal
         commit_and_raise(
             db,
-            AppError(
-                409,
-                "quantity_mismatch",
-                "Quantity does not match the current server-side calculation. "
-                "Refresh the signal and try again.",
-            ),
+            AppError(409, code, message),
             action="order.rejected_validation",
             entity_type="signal",
             entity_id=signal.id,
-            payload={**base, "reason": "quantity_mismatch", "server_quantity": result.quantity},
+            payload={**base, "reason": code, "server_quantity": result.quantity},
             actor_user_id=principal.user.id,
             correlation_id=correlation_id,
         )
     account, _connection = broker_for_trader(db, principal.user.id, utcnow())
+    if account.status == "connected":
+        margin = _margin(db, principal.user.id, signal, body.product, side, trigger, body.quantity)
+        if margin.message is not None:
+            commit_and_raise(
+                db,
+                AppError(409, margin.code or "insufficient_margin", margin.message),
+                action="order.rejected_validation",
+                entity_type="signal",
+                entity_id=signal.id,
+                payload={
+                    **base,
+                    "reason": margin.code or "insufficient_margin",
+                    "margin_required": (
+                        None if margin.required is None else money(margin.required)
+                    ),
+                    "margin_available": (
+                        None if margin.available is None else money(margin.available)
+                    ),
+                },
+                actor_user_id=principal.user.id,
+                correlation_id=correlation_id,
+            )
     if account.status != "connected":
         commit_and_raise(
             db,
@@ -130,7 +167,7 @@ def confirm_order(
             correlation_id=correlation_id,
         )
 
-    ticket = _Ticket(side, trigger, stop, targets, result.quantity or body.quantity, result)
+    ticket = _Ticket(side, trigger, stop, targets, body.quantity, result)
     found = _by_key(db, body.idempotency_key)
     if found is not None:
         if found.user_id != principal.user.id or not _same(found, ticket, body.product):
@@ -257,6 +294,54 @@ def _prices(signal: Signal, body: OrderPreviewIn | OrderRequest):
     if not targets:
         raise AppError(422, "invalid_price", "Enter at least one target.")
     return side, trigger, stop, targets
+
+
+def _margin(db, user_id, signal: Signal, product: str, side: str, trigger: Decimal, quantity: int):
+    account, _connection = broker_for_trader(db, user_id, utcnow())
+    if account.status != "connected":
+        return _MarginCheck(None, None, None, None)
+    if signal.segment.casefold() != "equity" or signal.exchange != "NSE":
+        return _MarginCheck(None, None, "margin_unavailable", _MARGIN_CASH)
+    if _TICKER.fullmatch(signal.symbol) is None:
+        return _MarginCheck(None, None, "margin_unavailable", _MARGIN_CASH)
+    try:
+        margin = equity_order_margin(
+            str(user_id),
+            exchange=signal.exchange,
+            tradingsymbol=signal.symbol,
+            transaction_type=side,
+            product=product,
+            quantity=quantity,
+            price=trigger,
+        )
+    except MarginUnavailable:
+        return _MarginCheck(None, None, "margin_unavailable", _MARGIN_UNAVAILABLE)
+    if margin.required > margin.available:
+        needed = money(margin.required) or "0.00"
+        held = money(margin.available) or "0.00"
+        return _MarginCheck(
+            margin.required,
+            margin.available,
+            "insufficient_margin",
+            f"This quantity needs ₹{needed}. Zerodha shows ₹{held} available. No order was saved.",
+        )
+    return _MarginCheck(margin.required, margin.available, None, None)
+
+
+def _quantity_refusal(
+    requested: int,
+    result: RiskResult,
+    lot_size: int,
+) -> tuple[str, str] | None:
+    if not result.ok or result.quantity is None:
+        return (
+            "quantity_mismatch",
+            result.reason or "Quantity could not be calculated. Refresh the signal and try again.",
+        )
+    message = quantity_refusal(requested, lot_size)
+    if message is None:
+        return None
+    return "quantity_not_a_lot", message
 
 
 def _risk(signal: Signal, profile, side: str, trigger: Decimal, stop: Decimal) -> RiskResult:

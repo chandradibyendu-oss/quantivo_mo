@@ -111,9 +111,6 @@ export default function SignalDetailScreen() {
 
             <Text style={ui.section}>Quantivo quantity</Text>
             <View style={ui.card}>
-              <Text style={ui.rowTitle}>
-                {signal.quantivo_values.suggested_quantity ?? "None"}
-              </Text>
               <OrderTicket signal={signal} />
               <Text style={ui.meta}>{signal.quantivo_values.formula}</Text>
               <Text style={ui.meta}>Maximum loss ₹{signal.quantivo_values.max_risk_inr}</Text>

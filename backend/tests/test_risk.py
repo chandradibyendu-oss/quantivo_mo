@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from app.modules.risk.calculator import RiskInputs, calculate
+from app.modules.risk.calculator import RiskInputs, calculate, quantity_refusal
 
 
 def _inputs(**overrides) -> RiskInputs:
@@ -25,6 +25,13 @@ def test_quantity_uses_risk_not_capital_allocation():
     assert base.quantity == 27
     assert base.quantity == larger_capital.quantity
     assert base.risk_amount == Decimal("486.00")
+
+
+def test_any_whole_lot_is_allowed_and_a_broken_lot_is_refused():
+    assert quantity_refusal(10, 1) is None
+    assert quantity_refusal(1000, 1) is None
+    assert quantity_refusal(25, 25) is None
+    assert quantity_refusal(10, 25) == "Quantity must be a whole number of lots of 25."
 
 
 def test_quantity_floors_and_respects_lot_size():
